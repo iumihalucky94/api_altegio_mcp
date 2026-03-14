@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "AdminCancelAppointmentApplyInput",
+  "type": "object",
+  "required": ["approval_id", "idempotency_key"],
+  "properties": {
+    "approval_id": { "type": "string", "format": "uuid" },
+    "idempotency_key": { "type": "string" }
+  }
+}

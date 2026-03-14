@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema_version": "v1",
+  "tools": [
+    { "name": "system.get_capabilities", "risk_level": "SAFE", "requires_approval": false, "input_schema_id": "SystemGetCapabilitiesInput", "output_schema_id": "SystemGetCapabilitiesOutput" },
+    { "name": "system.explain_error", "risk_level": "SAFE", "requires_approval": false, "input_schema_id": "SystemExplainErrorInput", "output_schema_id": "SystemExplainErrorOutput" },
+    { "name": "conversation.append_messages", "risk_level": "SAFE", "requires_approval": false, "input_schema_id": "ConversationAppendMessagesInput", "output_schema_id": "ConversationAppendMessagesOutput" },
+    { "name": "admin.get_upcoming_appointments_by_phone", "risk_level": "SAFE", "requires_approval": false, "input_schema_id": "AdminGetUpcomingAppointmentsByPhoneInput", "output_schema_id": "AdminGetUpcomingAppointmentsByPhoneOutput" },
+    { "name": "handoff.create_case", "risk_level": "SAFE", "requires_approval": false, "input_schema_id": "HandoffCreateCaseInput", "output_schema_id": "HandoffCreateCaseOutput" },
+    { "name": "admin.cancel_appointment_plan", "risk_level": "HIGH", "requires_approval": true, "input_schema_id": "AdminCancelAppointmentPlanInput", "output_schema_id": "AdminCancelAppointmentPlanOutput" },
+    { "name": "admin.cancel_appointment_apply", "risk_level": "HIGH", "requires_approval": true, "input_schema_id": "AdminCancelAppointmentApplyInput", "output_schema_id": "AdminCancelAppointmentApplyOutput" }
+  ]
+}

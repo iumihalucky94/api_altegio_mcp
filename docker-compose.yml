@@ -1,0 +1,113 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: altegio_mcp_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-altegio_mcp}
+      POSTGRES_USER: ${POSTGRES_USER:-altegio_mcp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-altegio_mcp_password}
+    ports:
+      - "${POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: altegio_mcp_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+
+  # WhatsApp-only container: whatsapp-web.js, forwards messages to orchestrator, exposes /whatsapp/send for replies
+  wa-service:
+    build:
+      context: ./wa-service
+      dockerfile: Dockerfile
+    container_name: altegio_mcp_wa_service
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - orchestrator
+    env_file:
+      - .env
+    ports:
+      - "${WA_SERVICE_PORT:-3032}:3032"
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      WA_SERVICE_PORT: 3032
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-altegio_mcp}
+      POSTGRES_USER: ${POSTGRES_USER:-altegio_mcp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-altegio_mcp_password}
+      ORCHESTRATOR_INGEST_URL: http://orchestrator:3031
+      WA_INTERNAL_TOKEN: ${MCP_INTERNAL_TOKEN:-}
+    working_dir: /app
+    volumes:
+      - wa_service_auth:/app/.wwebjs_auth
+
+  # MCP Altegio container: MCP server, Altegio B2B client (ALTEGIO_*), tools: crm.*, admin.*, handoff.* (no WhatsApp)
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: altegio_mcp_gateway
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env
+    ports:
+      - "${GATEWAY_PORT:-3030}:3030"
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      GATEWAY_PORT: 3030
+    working_dir: /app
+    volumes:
+      - ./db/migrations:/app/db/migrations:ro
+
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: altegio_mcp_orchestrator
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - gateway
+    env_file:
+      - .env
+    ports:
+      - "${ORCHESTRATOR_PORT:-3031}:3031"
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB:-altegio_mcp}
+      PGUSER: ${POSTGRES_USER:-altegio_mcp}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-altegio_mcp_password}
+      MCP_GATEWAY_URL: http://gateway:3030
+      WA_SEND_URL: http://wa-service:3032
+      MCP_INTERNAL_TOKEN: ${MCP_INTERNAL_TOKEN:-}
+      ORCHESTRATOR_PORT: 3031
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TG_LOGS_GROUP_CHAT_ID: ${TG_LOGS_GROUP_CHAT_ID:-}
+      TG_SUMMARY_GROUP_CHAT_ID: ${TG_SUMMARY_GROUP_CHAT_ID:-}
+      ADMIN_APPROVE_KEY: ${ADMIN_APPROVE_KEY:-}
+      DEFAULT_COMPANY_ID: ${DEFAULT_COMPANY_ID:-1169276}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_AGENT_API_KEY: ${AI_AGENT_API_KEY:-}
+      AI_AGENT_API_BASE_URL: ${AI_AGENT_API_BASE_URL:-}
+      AI_AGENT_MODEL: ${AI_AGENT_MODEL:-gpt-4o-mini}
+      ALLOW_ONLY_LISTED_PHONES: ${ALLOW_ONLY_LISTED_PHONES:-false}
+      ALLOWED_PHONE_LIST: ${ALLOWED_PHONE_LIST:-}
+
+volumes:
+  postgres_data:
+  wa_service_auth:
+

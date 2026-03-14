@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "McpEnvelopeResponse",
+  "type": "object",
+  "required": ["request_id", "audit_id", "decision", "result", "actions", "next_steps"],
+  "properties": {
+    "request_id": { "type": "string" },
+    "audit_id": { "type": "string", "format": "uuid" },
+    "decision": { "type": "string", "enum": ["ALLOW", "NEED_APPROVAL", "NEED_HUMAN", "DENY"] },
+    "result": { "type": "object" },
+    "actions": { "type": "array", "items": { "type": "object" } },
+    "policy_reason": { "type": ["string", "null"] },
+    "error": { "$ref": "McpError.json" },
+    "next_steps": {
+      "type": "array",
+      "items": { "$ref": "NextSteps.json" }
+    }
+  }
+}

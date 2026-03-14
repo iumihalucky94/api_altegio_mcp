@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ConversationAppendMessagesInput",
+  "type": "object",
+  "required": ["conversation_id", "client_phone", "messages"],
+  "properties": {
+    "conversation_id": { "type": "string" },
+    "client_phone": { "type": "string" },
+    "messages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ts", "direction", "author", "text"],
+        "properties": {
+          "ts": { "type": "string", "format": "date-time" },
+          "direction": { "type": "string", "enum": ["in", "out"] },
+          "author": { "type": "string", "enum": ["client", "agent", "admin"] },
+          "text": { "type": "string" },
+          "locale": { "type": "string", "enum": ["ru", "de", "en", "mixed"] },
+          "metadata": { "type": "object" },
+          "id": { "type": "string" }
+        }
+      }
+    }
+  }
+}

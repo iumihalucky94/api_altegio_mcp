@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "McpEnvelopeRequest",
+  "type": "object",
+  "required": ["request_id", "actor", "company_id", "tool", "payload"],
+  "properties": {
+    "request_id": { "type": "string", "format": "uuid" },
+    "actor": {
+      "type": "object",
+      "required": ["agent_id", "role"],
+      "properties": {
+        "agent_id": { "type": "string" },
+        "role": { "type": "string" }
+      }
+    },
+    "company_id": { "type": "integer" },
+    "tool": { "type": "string" },
+    "intent": { "type": "string" },
+    "dry_run": { "type": "boolean", "default": false },
+    "payload": { "type": "object" },
+    "conversation_id": { "type": "string" },
+    "client_phone": { "type": "string" },
+    "locale": { "type": "string", "enum": ["ru", "de", "en"] }
+  }
+}

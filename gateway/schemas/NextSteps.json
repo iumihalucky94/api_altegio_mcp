@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "NextSteps",
+  "type": "object",
+  "properties": {
+    "type": { "type": "string", "enum": ["APPROVE", "HANDOFF", "RETRY", "CLARIFY"] },
+    "approval_id": { "type": "string", "format": "uuid" },
+    "case_id": { "type": "string" },
+    "suggested_fix": { "type": "object" }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "HandoffCreateCaseInput",
+  "type": "object",
+  "required": ["conversation_id", "client_phone", "language", "summary", "question_to_admin"],
+  "properties": {
+    "conversation_id": { "type": "string" },
+    "client_phone": { "type": "string" },
+    "client_name": { "type": ["string", "null"] },
+    "language": { "type": "string", "enum": ["ru", "de", "en", "mixed"] },
+    "last_messages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ts": { "type": "string" },
+          "from": { "type": "string", "enum": ["client", "agent"] },
+          "text": { "type": "string" }
+        }
+      }
+    },
+    "summary": { "type": "string" },
+    "question_to_admin": { "type": "string" },
+    "related_audit_ids": { "type": "array", "items": { "type": "string", "format": "uuid" } }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "AdminCancelAppointmentPlanInput",
+  "type": "object",
+  "required": ["appointment_id", "reason", "requested_by"],
+  "properties": {
+    "appointment_id": { "type": "string" },
+    "reason": { "type": "string" },
+    "requested_by": { "type": "string", "enum": ["client", "agent"] }
+  }
+}
