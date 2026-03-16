@@ -246,11 +246,10 @@ export async function tryDeterministicSchedulingReply(params: {
   if (slotsOnRequested.length > 0) {
     const slotsText = formatSlotsForMessage(slotsOnRequested);
     const dateLabel = formatDateLabel(requestedDate, effectiveLang);
-    const reply = preferredStaffName
-      ? getSystemMessage('slots_available_with_master', effectiveLang, { masterName: preferredStaffName, date: dateLabel, slots: slotsText })
-      : getSystemMessage('slots_available', effectiveLang, { date: dateLabel, slots: slotsText });
+    // Generic all-staff availability: никогда не упоминаем конкретного мастера.
+    const reply = getSystemMessage('slots_available', effectiveLang, { date: dateLabel, slots: slotsText });
     events.push({ event_type: 'alternative_slots_found', payload: { count: slotsOnRequested.length } });
-    events.push({ event_type: 'deterministic_reply_sent', payload: { code: DETERMINISTIC_CODES.SLOTS_AVAILABLE } });
+    events.push({ event_type: 'deterministic_reply_sent', payload: { code: DETERMINISTIC_CODES.SLOTS_AVAILABLE, staff_specific: false } });
     return { applied: true, reply, code: DETERMINISTIC_CODES.SLOTS_AVAILABLE, alternativeSlots: slotsOnRequested, events };
   }
 
