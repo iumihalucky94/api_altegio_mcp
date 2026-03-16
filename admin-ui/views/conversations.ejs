@@ -1,0 +1,32 @@
+<%- include('partials/layoutStart') %>
+<h1 class="page-title">Беседы</h1>
+<p class="page-desc"><a href="/on-hold" class="btn btn-primary btn-sm">Только on hold</a></p>
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>conversation_id</th>
+        <th>Телефон</th>
+        <th>state</th>
+        <th>Язык</th>
+        <th>Сценарий</th>
+        <th>Последнее вх.</th>
+        <th>События</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% (conversations || []).forEach(c => { %>
+      <tr>
+        <td><code><%= c.conversation_id %></code></td>
+        <td><%= c.client_phone %></td>
+        <td><%= c.state %></td>
+        <td><%= c.detected_primary_language || '—' %></td>
+        <td><%= c.current_scenario_code || '—' %></td>
+        <td><%= c.last_inbound_at || '—' %></td>
+        <td><a href="/events/<%= c.conversation_id %>" class="btn btn-sm">События</a></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<%- include('partials/layoutEnd') %>

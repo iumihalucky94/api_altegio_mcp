@@ -56,7 +56,7 @@ export function classifyIntent(text: string): Intent {
 
   // Booking keywords
   if (
-    /\b(termin|appointment|записат|запись|коррекц|refill|auffüllung|neues set|new set|nächste woche|am dienstag|am samstag|как можно скорее)\b/.test(
+    /\b(termin|appointment|записат|запись|коррекц|refill|auffüllung|neues set|new set|nächste woche|am dienstag|am samstag|как можно скорее|окошек|окошко|есть место|есть слот|реснич|wimpern|lash)\b/.test(
       t
     )
   ) {

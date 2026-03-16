@@ -107,6 +107,30 @@ services:
       ALLOW_ONLY_LISTED_PHONES: ${ALLOW_ONLY_LISTED_PHONES:-false}
       ALLOWED_PHONE_LIST: ${ALLOWED_PHONE_LIST:-}
 
+  # Admin UI: test cases, policies, handoffs, reviews (login + password, port 65404)
+  admin-ui:
+    build:
+      context: ./admin-ui
+      dockerfile: Dockerfile
+    container_name: altegio_mcp_admin_ui
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+    ports:
+      - "${ADMIN_UI_PORT:-65404}:65404"
+    environment:
+      ADMIN_UI_PORT: 65404
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-altegio_mcp}
+      POSTGRES_USER: ${POSTGRES_USER:-altegio_mcp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-altegio_mcp_password}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+    working_dir: /app
+
 volumes:
   postgres_data:
   wa_service_auth:

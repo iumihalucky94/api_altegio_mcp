@@ -23,6 +23,7 @@ import { handleListServices } from './tools/crm/listServices';
 import { handleGetServiceDuration } from './tools/crm/getServiceDuration';
 import { handleGetMasterWorkingHours } from './tools/crm/getMasterWorkingHours';
 import { handleGetFreeSlots } from './tools/crm/getFreeSlots';
+import { handleGetAvailabilityForDate } from './tools/crm/getAvailabilityForDate';
 import { handleValidateSlot } from './tools/crm/validateSlot';
 
 type EnvConfig = any;
@@ -53,6 +54,7 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   'crm.get_service_duration': handleGetServiceDuration,
   'crm.get_master_working_hours': handleGetMasterWorkingHours,
   'crm.get_free_slots': handleGetFreeSlots,
+  'crm.get_availability_for_date': handleGetAvailabilityForDate,
   'crm.validate_slot': handleValidateSlot,
   'crm.search_clients': handleSearchClients,
   'crm.search_appointments': handleSearchAppointments,

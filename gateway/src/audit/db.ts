@@ -18,7 +18,12 @@ const MIGRATIONS = [
   '004_orchestrator.sql',
   '005_kb.sql',
   '006_audit_log.sql',
-  '007_wa_service_config.sql'
+  '007_wa_service_config.sql',
+  '008_conversations_extend.sql',
+  '009_scenarios_and_policies.sql',
+  '010_conversation_events.sql',
+  '011_conversation_reviews.sql',
+  '012_conversation_corrections.sql'
 ];
 
 export async function runMigrations(pool: DbPool, logger: any) {

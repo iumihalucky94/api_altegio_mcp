@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Вход — Admin Altegio</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: #1e2134; display: flex; align-items: center; justify-content: center; min-height: 100vh; color: #e6e8ec; }
+    .box { background: #2a2e44; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.3); width: 100%; max-width: 340px; border: 1px solid rgba(255,255,255,0.06); }
+    h1 { margin: 0 0 1.25rem 0; font-size: 1.35rem; font-weight: 600; color: #fff; }
+    label { display: block; margin-bottom: 0.35rem; font-weight: 500; font-size: 0.9rem; color: #e6e8ec; }
+    input { width: 100%; padding: 0.6rem 0.75rem; margin-bottom: 1rem; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; background: #1e2134; color: #fff; font-size: 1rem; }
+    input:focus { outline: none; border-color: #6366f1; }
+    button { width: 100%; padding: 0.65rem; background: #6366f1; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: 500; }
+    button:hover { background: #4f46e5; }
+    .error { color: #f87171; margin-bottom: 1rem; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Вход в админку</h1>
+    <% if (typeof error === 'string' && error) { %><p class="error"><%= error %></p><% } %>
+    <form method="post" action="/login">
+      <label for="username">Логин</label>
+      <input id="username" name="username" type="text" required autocomplete="username">
+      <label for="password">Пароль</label>
+      <input id="password" name="password" type="password" required autocomplete="current-password">
+      <button type="submit">Войти</button>
+    </form>
+  </div>
+</body>
+</html>

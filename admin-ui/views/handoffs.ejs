@@ -1,0 +1,31 @@
+<%- include('partials/layoutStart') %>
+<h1 class="page-title">Handoff-кейсы</h1>
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Беседа</th>
+        <th>Телефон</th>
+        <th>Summary</th>
+        <th>Статус</th>
+        <th>Создан</th>
+        <th>События</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% (handoffs || []).forEach(h => { %>
+      <tr>
+        <td><code><%= (h.id || '').slice(0, 8) %>…</code></td>
+        <td><%= h.conversation_id %></td>
+        <td><%= h.client_phone %></td>
+        <td style="max-width: 200px;"><%= (h.summary || '').slice(0, 100) %><%= (h.summary && h.summary.length > 100) ? '…' : '' %></td>
+        <td><%= h.status %></td>
+        <td><%= h.created_at %></td>
+        <td><a href="/events/<%= h.conversation_id %>" class="btn btn-sm">События</a></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<%- include('partials/layoutEnd') %>

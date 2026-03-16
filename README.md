@@ -4,10 +4,11 @@ Local MCP HTTP gateway for Altegio CRM, with a strict allowlisted toolset, audit
 
 ### 1. Project Layout
 
-- **docker-compose.yml**: Postgres, Redis, **wa-service** (WhatsApp only), **gateway** (MCP, no WhatsApp), Orchestrator.
+- **docker-compose.yml**: Postgres, Redis, **wa-service** (WhatsApp only), **gateway** (MCP, no WhatsApp), Orchestrator, **admin-ui** (веб-админка на порту 65404).
 - **wa-service/**: Standalone WhatsApp Web container (whatsapp-web.js). Forwards incoming messages to orchestrator ingest; exposes `/whatsapp/send` for orchestrator replies. Config from same DB (`admin_config`) or ENV.
 - **gateway/**: Fastify + TypeScript MCP gateway (Altegio integration, availability, booking validation). Tools: `crm.*`, `admin.*`, `handoff.*`. No WhatsApp.
 - **orchestrator/**: Ingest, debounce, AI, handoff; sends replies via **wa-service** (`WA_SEND_URL`).
+- **admin-ui/**: Express-приложение с логин/пароль: тест-кейсы по языкам и сценариям, список mutating MCP tools, smoke-test matrix, политики сценариев (редактирование), handoff-кейсы, беседы, события, оценки (review).
 - **db/migrations/**: SQL migrations (schema + seed approval policies + wa-service config keys).
 - **api_docs/**: Offline Altegio API docs (reference only).
 
@@ -35,6 +36,7 @@ Key variables:
 - **Redis**: `REDIS_HOST`, `REDIS_PORT` (gateway).
 - **Altegio** (gateway): `ALTEGIO_BASE_URL`, `ALTEGIO_API_VERSION`, `ALTEGIO_PARTNER_TOKEN`, `ALTEGIO_USER_TOKEN`.
 - **wa-service**: `ORCHESTRATOR_INGEST_URL` (e.g. `http://orchestrator:3031`), `WA_INTERNAL_TOKEN` (= `MCP_INTERNAL_TOKEN`). Overridable via `admin_config`: `wa.orchestrator_ingest_url`, `wa.internal_token`.
+- **admin-ui**: `ADMIN_UI_PORT` (default `65404`), `ADMIN_USER`, `ADMIN_PASSWORD` — логин и пароль для входа в веб-админку.
 
 ### 4. Running with Docker
 
@@ -50,6 +52,7 @@ This will:
 - Start **wa-service** on `http://localhost:3032` (WhatsApp Web; scan QR at `GET /whatsapp/qr`).
 - Build and start the **gateway** on `http://localhost:3030` (MCP, approvals, admin).
 - Start **orchestrator** on `http://localhost:3031` (ingest, debounce, AI, sends replies via wa-service).
+- Start **admin-ui** on `http://localhost:65404` (тест-кейсы, политики, handoff, беседы, оценки; авторизация по логину и паролю).
 
 Health checks:
 

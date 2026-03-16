@@ -1,0 +1,32 @@
+<%- include('partials/layoutStart') %>
+<h1 class="page-title">Оценки бесед</h1>
+<p class="page-desc"><a href="/reviews/add" class="btn btn-primary btn-sm">Добавить оценку</a></p>
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Беседа</th>
+        <th>Тип</th>
+        <th>score_overall</th>
+        <th>Комментарий</th>
+        <th>Теги</th>
+        <th>Создано</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% (reviews || []).forEach(r => { %>
+      <tr>
+        <td><code><%= (r.id || '').slice(0, 8) %>…</code></td>
+        <td><a href="/events/<%= r.conversation_id %>"><%= r.conversation_id %></a></td>
+        <td><%= r.reviewer_type %></td>
+        <td><%= r.score_overall != null ? r.score_overall : '—' %></td>
+        <td><%= (r.comment || '').slice(0, 80) %><%= (r.comment && r.comment.length > 80) ? '…' : '' %></td>
+        <td><% (r.tags || []).forEach(tag => { %><span class="tag"><%= tag %></span><% }); %></td>
+        <td><%= r.created_at %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<%- include('partials/layoutEnd') %>

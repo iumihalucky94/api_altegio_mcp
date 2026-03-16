@@ -1,0 +1,29 @@
+<%- include('partials/layoutStart') %>
+<h1 class="page-title">Добавить оценку беседы</h1>
+<div class="card">
+  <form method="post" action="/reviews/create">
+    <p>
+      <label for="conversation_id">conversation_id *</label>
+      <input id="conversation_id" name="conversation_id" type="text" value="<%= conversationId %>" required style="width: 100%; max-width: 400px;">
+    </p>
+    <p>
+      <label for="reviewer_type">Тип ревьюера *</label>
+      <input id="reviewer_type" name="reviewer_type" type="text" value="admin" required placeholder="admin">
+    </p>
+    <p>
+      <label for="score_overall">Оценка (0–1)</label>
+      <input id="score_overall" name="score_overall" type="number" step="0.01" min="0" max="1" placeholder="0.85">
+    </p>
+    <p>
+      <label for="comment">Комментарий</label>
+      <textarea id="comment" name="comment" rows="3" style="width: 100%; max-width: 400px;"></textarea>
+    </p>
+    <p>
+      <label for="tags">Теги (через запятую)</label>
+      <input id="tags" name="tags" type="text" placeholder="good_clarity, wrong_language" style="width: 100%; max-width: 400px;">
+    </p>
+    <button type="submit" class="btn btn-primary">Создать оценку</button>
+    <a href="/reviews" class="btn btn-ghost">Отмена</a>
+  </form>
+</div>
+<%- include('partials/layoutEnd') %>

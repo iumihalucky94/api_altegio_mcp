@@ -1,0 +1,28 @@
+<%- include('partials/layoutStart') %>
+<h1 class="page-title">Mutating MCP tools</h1>
+<p class="page-desc">Execute guards (<code>allow_agent_to_execute</code>) применяются только к этим инструментам. Read-only не блокируются.</p>
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Tool</th>
+        <th>Описание</th>
+        <th>Риск</th>
+        <th>Approval</th>
+        <th>Заметка ревизии</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% (data.mutatingTools || []).forEach(t => { %>
+      <tr>
+        <td><code><%= t.tool %></code></td>
+        <td><%= t.description %></td>
+        <td><span class="badge badge-<%= t.risk.toLowerCase() %>"><%= t.risk %></span></td>
+        <td><%= t.approval %></td>
+        <td><%= t.review_note %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<%- include('partials/layoutEnd') %>

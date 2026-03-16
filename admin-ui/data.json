@@ -1,0 +1,54 @@
+{
+  "testCases": [
+    {"id": 1, "language": "de", "scenario": "booking", "allow_reply": true, "allow_execute": false, "allow_handoff": true, "expected": "Reply in DE; no create_appointment; can handoff", "priority": "P0"},
+    {"id": 2, "language": "de", "scenario": "booking", "allow_reply": true, "allow_execute": true, "allow_handoff": true, "expected": "Reply in DE; can create appointment; can handoff", "priority": "P0"},
+    {"id": 3, "language": "ru", "scenario": "booking", "allow_reply": true, "allow_execute": false, "allow_handoff": true, "expected": "Reply in RU; no create; can handoff", "priority": "P0"},
+    {"id": 4, "language": "en", "scenario": "booking", "allow_reply": true, "allow_execute": false, "allow_handoff": true, "expected": "Reply in EN; no create; can handoff", "priority": "P0"},
+    {"id": 5, "language": "mixed→de", "scenario": "booking", "allow_reply": true, "allow_execute": false, "allow_handoff": true, "expected": "Resolved lang DE; reply; no create", "priority": "P1"},
+    {"id": 6, "language": "de", "scenario": "reschedule", "allow_reply": true, "allow_execute": false, "allow_handoff": true, "expected": "Reply in DE; no reschedule tool; can handoff", "priority": "P0"},
+    {"id": 7, "language": "de", "scenario": "cancel", "allow_reply": true, "allow_execute": false, "allow_handoff": true, "expected": "Reply in DE; no cancel tool; can handoff", "priority": "P0"},
+    {"id": 8, "language": "de", "scenario": "faq", "allow_reply": true, "allow_execute": false, "allow_handoff": true, "expected": "Reply only (no mutating tools)", "priority": "P0"},
+    {"id": 9, "language": "ru", "scenario": "complaint", "allow_reply": true, "allow_execute": false, "allow_handoff": true, "expected": "Reply in RU; handoff allowed", "priority": "P0"},
+    {"id": 10, "language": "de", "scenario": "unknown", "allow_reply": true, "allow_execute": false, "allow_handoff": true, "expected": "Reply in DE; conservative", "priority": "P0"},
+    {"id": 11, "language": "de", "scenario": "booking", "allow_reply": false, "allow_execute": false, "allow_handoff": true, "expected": "No reply to client; handoff only; generic_ack or handoff_ack", "priority": "P1"},
+    {"id": 12, "language": "de", "scenario": "booking", "allow_reply": true, "allow_execute": false, "allow_handoff": false, "expected": "Reply in DE; AI wants handoff but policy blocks → reply only", "priority": "P1"},
+    {"id": 13, "language": "de", "scenario": "booking", "allow_reply": true, "allow_execute": true, "allow_handoff": true, "expected": "Confidence < threshold → handoff low_confidence", "priority": "P0"},
+    {"id": 14, "language": "de", "scenario": "booking", "allow_reply": true, "allow_execute": true, "allow_handoff": true, "expected": "Confidence ≥ threshold → RESPOND, execute if in mcp_calls", "priority": "P0"},
+    {"id": 15, "language": "ru", "scenario": "late_arrival", "allow_reply": true, "allow_execute": false, "allow_handoff": true, "expected": "Reply in RU; scenario late_arrival", "priority": "P1"}
+  ],
+  "mutatingTools": [
+    {"tool": "crm.create_appointment", "description": "Create new appointment", "risk": "HIGH", "approval": "Configurable", "review_note": "Slot must be from get_free_slots; no confirm without success"},
+    {"tool": "crm.reschedule_appointment", "description": "Reschedule existing", "risk": "HIGH", "approval": "Configurable", "review_note": "Validate new slot"},
+    {"tool": "crm.cancel_appointment.plan", "description": "Plan cancellation", "risk": "MEDIUM", "approval": "Yes", "review_note": "Creates approval flow"},
+    {"tool": "crm.cancel_appointment.apply", "description": "Apply cancellation", "risk": "HIGH", "approval": "Yes", "review_note": "After approval"},
+    {"tool": "admin.cancel_appointment_plan", "description": "Alias for plan", "risk": "MEDIUM", "approval": "Yes", "review_note": "—"},
+    {"tool": "admin.cancel_appointment_apply", "description": "Alias for apply", "risk": "HIGH", "approval": "Yes", "review_note": "—"},
+    {"tool": "handoff.create_case", "description": "Create handoff case", "risk": "LOW", "approval": "No", "review_note": "Orchestrator creates case"},
+    {"tool": "admin.update_client", "description": "Update client data", "risk": "MEDIUM", "approval": "Configurable", "review_note": "—"},
+    {"tool": "admin.update_appointment_services", "description": "Change services on appointment", "risk": "HIGH", "approval": "Configurable", "review_note": "—"}
+  ],
+  "smokeHandoff": [
+    {"trigger": "Low confidence", "reason_code": "low_confidence", "condition": "result.confidence < threshold", "expected": "Handoff; reason_code low_confidence; confidence in payload"},
+    {"trigger": "AI decision HANDOFF", "reason_code": "ai_handoff", "condition": "result.decision === 'HANDOFF'", "expected": "Handoff; reply_text sent if present; summary from AI"},
+    {"trigger": "AI decision NEED_APPROVAL", "reason_code": "need_approval", "condition": "result.decision === 'NEED_APPROVAL'", "expected": "Handoff; reply_text sent; summary"},
+    {"trigger": "Agent call failed", "reason_code": "ai_agent_failed", "condition": "!result", "expected": "Handoff; no reply_text"},
+    {"trigger": "Booking API failed", "reason_code": "booking_failed", "condition": "create_appointment threw", "expected": "Handoff; booking_failed message to client"},
+    {"trigger": "Fake confirmation", "reason_code": "fake_confirmation_blocked", "condition": "reply looks confirmed but no create success", "expected": "Handoff; booking_not_confirmed_fallback to client"},
+    {"trigger": "Policy: handoff disallowed", "reason_code": "—", "condition": "allow_agent_to_create_handoff false", "expected": "No handoff; reply only or generic_ack"},
+    {"trigger": "Legacy (no AI)", "reason_code": "legacy_handoff", "condition": "Trigger words or force_handoff", "expected": "Handoff with summary"}
+  ],
+  "smokeRespond": [
+    {"condition": "RESPOND, allow_agent_to_reply true, reply_text present", "expected": "Send reply_text to client"},
+    {"condition": "RESPOND, allow_agent_to_reply true, no reply_text", "expected": "Send generic_ack"},
+    {"condition": "RESPOND, allow_agent_to_reply false", "expected": "Send generic_ack only; reply_blocked event"},
+    {"condition": "RESPOND, mutating tool, allow_agent_to_execute true", "expected": "Execute tool; tool_succeeded / tool_failed event"},
+    {"condition": "RESPOND, mutating tool, allow_agent_to_execute false", "expected": "Skip tool; execution_denied_by_policy event"}
+  ],
+  "smokeBlocked": [
+    {"scenario": "booking", "allow_execute": false, "tool": "crm.create_appointment", "result": "Tool skipped; execution_denied_by_policy; no create"},
+    {"scenario": "booking", "allow_execute": true, "tool": "crm.create_appointment", "result": "Tool executed (if confidence + validation OK)"},
+    {"scenario": "reschedule", "allow_execute": false, "tool": "crm.reschedule_appointment", "result": "Tool skipped"},
+    {"scenario": "cancel", "allow_execute": false, "tool": "crm.cancel_appointment.apply", "result": "Tool skipped"},
+    {"scenario": "any", "allow_execute": "—", "tool": "get_free_slots (read-only)", "result": "Always executed (no guard)"}
+  ]
+}

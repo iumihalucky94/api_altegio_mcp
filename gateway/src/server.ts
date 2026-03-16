@@ -79,7 +79,9 @@ async function main() {
     'logging.include_tool': true,
     'config.cache_ttl_ms': 10000,
     'redis.host': env.REDIS_HOST ?? '',
-    'redis.port': env.REDIS_PORT ?? 6379
+    'redis.port': env.REDIS_PORT ?? 6379,
+    DEFAULT_STAFF_ID: process.env.DEFAULT_STAFF_ID ?? '',
+    DEFAULT_SERVICE_ID: process.env.DEFAULT_SERVICE_ID ?? ''
   });
 
   app.decorate('db', db);

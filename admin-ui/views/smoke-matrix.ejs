@@ -1,0 +1,68 @@
+<%- include('partials/layoutStart') %>
+<h1 class="page-title">Smoke-test matrix</h1>
+<h2 style="font-size:1.1rem; margin:1rem 0 0.5rem 0;">Handoff</h2>
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Триггер</th>
+        <th>reason_code</th>
+        <th>Условие</th>
+        <th>Ожидание</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% (data.smokeHandoff || []).forEach(r => { %>
+      <tr>
+        <td><%= r.trigger %></td>
+        <td><code><%= r.reason_code %></code></td>
+        <td><%= r.condition %></td>
+        <td><%= r.expected %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<h2 style="font-size:1.1rem; margin:1rem 0 0.5rem 0;">Respond</h2>
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Условие</th>
+        <th>Ожидание</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% (data.smokeRespond || []).forEach(r => { %>
+      <tr>
+        <td><%= r.condition %></td>
+        <td><%= r.expected %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<h2 style="font-size:1.1rem; margin:1rem 0 0.5rem 0;">Blocked execution</h2>
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Сценарий</th>
+        <th>allow_execute</th>
+        <th>Tool</th>
+        <th>Результат</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% (data.smokeBlocked || []).forEach(r => { %>
+      <tr>
+        <td><%= r.scenario %></td>
+        <td><%= r.allow_execute %></td>
+        <td><code><%= r.tool %></code></td>
+        <td><%= r.result %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<%- include('partials/layoutEnd') %>

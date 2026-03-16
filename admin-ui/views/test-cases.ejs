@@ -1,0 +1,33 @@
+<%- include('partials/layoutStart') %>
+<h1 class="page-title">Тест-кейсы: язык / сценарий / policy gating</h1>
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Язык</th>
+        <th>Сценарий</th>
+        <th>reply</th>
+        <th>execute</th>
+        <th>handoff</th>
+        <th>Ожидание</th>
+        <th>Приоритет</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% (data.testCases || []).forEach(tc => { %>
+      <tr>
+        <td><%= tc.id %></td>
+        <td><%= tc.language %></td>
+        <td><%= tc.scenario %></td>
+        <td class="<%= tc.allow_reply ? 'yes' : 'no' %>"><%= tc.allow_reply ? '✓' : '✗' %></td>
+        <td class="<%= tc.allow_execute ? 'yes' : 'no' %>"><%= tc.allow_execute ? '✓' : '✗' %></td>
+        <td class="<%= tc.allow_handoff ? 'yes' : 'no' %>"><%= tc.allow_handoff ? '✓' : '✗' %></td>
+        <td><%= tc.expected %></td>
+        <td><span class="badge badge-<%= tc.priority === 'P0' ? 'p0' : 'p1' %>"><%= tc.priority %></span></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<%- include('partials/layoutEnd') %>

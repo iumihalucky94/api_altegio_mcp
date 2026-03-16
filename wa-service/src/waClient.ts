@@ -88,8 +88,10 @@ export function initWaClient(authDir?: string, log?: any): Promise<void> {
       const ts = message.timestamp ? new Date(message.timestamp * 1000).toISOString() : new Date().toISOString();
       const providerMessageId = message.id?.id || message.id?._serialized || message.id || '';
 
-      const ingestUrl = await getConfigString('wa.orchestrator_ingest_url', process.env.ORCHESTRATOR_INGEST_URL || '');
-      const token = await getConfigString('wa.internal_token', process.env.WA_INTERNAL_TOKEN || '');
+      const ingestUrlRaw = await getConfigString('wa.orchestrator_ingest_url', process.env.ORCHESTRATOR_INGEST_URL || '');
+      const ingestUrl = (ingestUrlRaw && ingestUrlRaw.trim()) || (process.env.ORCHESTRATOR_INGEST_URL || '').trim();
+      const tokenRaw = await getConfigString('wa.internal_token', process.env.WA_INTERNAL_TOKEN || '');
+      const token = (tokenRaw && tokenRaw.trim()) || (process.env.WA_INTERNAL_TOKEN || '').trim();
       if (!ingestUrl) {
         log?.warn('wa.orchestrator_ingest_url / ORCHESTRATOR_INGEST_URL not set, skip forward');
         return;

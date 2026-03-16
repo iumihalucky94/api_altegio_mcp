@@ -32,6 +32,7 @@ export async function registerIngestRoutes(app: FastifyInstance) {
     const token = (request.headers['x-internal-token'] as string) || (request.headers['authorization']?.replace(/^Bearer\s+/i, ''));
     const expectedToken = await (app as any).getMcpInternalToken?.();
     if (expectedToken && token !== expectedToken) {
+      log.warn({ hasToken: !!token }, 'Ingest: 401 Unauthorized (token mismatch)');
       return reply.code(401).send({ error: 'Unauthorized' });
     }
 
@@ -51,6 +52,8 @@ export async function registerIngestRoutes(app: FastifyInstance) {
     const text = typeof body.text === 'string' ? body.text : '';
     const messageId = body.provider_message_id || '';
 
+    log.info({ conversationId, clientPhone: phone, textPreview: text.slice(0, 60) }, 'Ingest: request received');
+
     await getOrCreateConversation(db, conversationId, phone);
     const inserted = await persistMessage(db, {
       conversationId,
@@ -66,9 +69,11 @@ export async function registerIngestRoutes(app: FastifyInstance) {
 
     const ignoreMode = await getIgnoreMode(db, phone);
     if (ignoreMode === 'IGNORE') {
+      log.info({ phone }, 'Ingest: skipped (IGNORE)');
       return reply.send({ ok: true });
     }
     if (ignoreMode === 'ADMIN_ONLY') {
+      log.info({ phone }, 'Ingest: skipped (ADMIN_ONLY)');
       const notify = await getConfigBoolean('telegram.admin_only_ping', true);
       if (notify) (app as any).sendToLogsGroup?.({ event: 'ADMIN_ONLY', provider: PROVIDER, client_phone: phone, text: text.slice(0, 100) });
       return reply.send({ ok: true });

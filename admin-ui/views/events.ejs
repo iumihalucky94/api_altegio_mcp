@@ -1,0 +1,28 @@
+<%- include('partials/layoutStart') %>
+<h1 class="page-title">События: <%= conversationId %></h1>
+<p class="page-desc">
+  <a href="/conversations" class="btn btn-ghost btn-sm">← Беседы</a>
+  <a href="/on-hold" class="btn btn-ghost btn-sm">On hold</a>
+  <a href="/reviews/add?conversationId=<%= encodeURIComponent(conversationId) %>" class="btn btn-primary btn-sm">Добавить оценку</a>
+</p>
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Время</th>
+        <th>Тип</th>
+        <th>Payload</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% (events || []).forEach(e => { %>
+      <tr>
+        <td><%= e.created_at %></td>
+        <td><code><%= e.event_type %></code></td>
+        <td><pre><%= typeof e.event_payload_json === 'object' ? JSON.stringify(e.event_payload_json, null, 2) : (e.event_payload_json || '') %></pre></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<%- include('partials/layoutEnd') %>

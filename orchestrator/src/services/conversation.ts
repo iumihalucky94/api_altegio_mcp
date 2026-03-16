@@ -49,6 +49,21 @@ export async function getOrCreateConversation(
   return get.rows[0] as ConversationRow;
 }
 
+/** Optionally update extended columns (detected_primary_language, current_scenario_code). No-op if columns missing. */
+export async function updateConversationLanguageAndScenario(
+  db: DbPool,
+  conversationId: string,
+  detectedPrimaryLanguage: string,
+  currentScenarioCode: string
+): Promise<void> {
+  try {
+    await db.query(
+      `UPDATE conversations SET detected_primary_language = $1, current_scenario_code = $2 WHERE conversation_id = $3`,
+      [detectedPrimaryLanguage, currentScenarioCode, conversationId]
+    );
+  } catch (_) {}
+}
+
 export async function setConversationState(
   db: DbPool,
   conversationId: string,

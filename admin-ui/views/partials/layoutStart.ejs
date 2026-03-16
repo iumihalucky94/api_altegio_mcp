@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= typeof title !== 'undefined' ? title + ' — ' : '' %>Admin Altegio</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --side-bg: #1e2134;
+      --side-text: #e6e8ec;
+      --side-hover: #2a2e44;
+      --side-active: #363b54;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --main-bg: #f8fafc;
+      --card-bg: #fff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --success: #059669;
+      --warn: #d97706;
+      --error: #dc2626;
+    }
+    body { margin: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--main-bg); color: var(--text); display: flex; min-height: 100vh; }
+    .sidebar { width: 240px; min-width: 240px; background: var(--side-bg); color: var(--side-text); display: flex; flex-direction: column; }
+    .sidebar-brand { padding: 1.25rem 1.5rem; font-weight: 700; font-size: 1.1rem; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .sidebar-brand a { color: inherit; text-decoration: none; }
+    .sidebar-nav { flex: 1; padding: 0.75rem 0; overflow-y: auto; }
+    .sidebar-nav a { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 1.25rem; color: var(--side-text); text-decoration: none; font-size: 0.9rem; transition: background .15s; }
+    .sidebar-nav a:hover { background: var(--side-hover); color: #fff; }
+    .sidebar-nav a.active { background: var(--side-active); color: #fff; border-left: 3px solid var(--accent); padding-left: calc(1.25rem - 3px); }
+    .sidebar-nav .nav-icon { width: 1.1em; opacity: 0.85; }
+    .sidebar-footer { padding: 0.75rem 1rem; border-top: 1px solid rgba(255,255,255,0.06); }
+    .sidebar-footer form { margin: 0; }
+    .sidebar-footer .btn { width: 100%; justify-content: center; background: transparent; color: var(--side-text); border: 1px solid rgba(255,255,255,0.15); }
+    .sidebar-footer .btn:hover { background: var(--side-hover); color: #fff; }
+    .main { flex: 1; display: flex; flex-direction: column; overflow: auto; }
+    .main-content { flex: 1; padding: 1.5rem 2rem; max-width: 1400px; width: 100%; margin: 0 auto; }
+    .page-title { margin: 0 0 0.25rem 0; font-size: 1.5rem; font-weight: 600; color: var(--text); }
+    .page-desc { margin: 0 0 1.25rem 0; color: var(--text-muted); font-size: 0.9rem; }
+    .card { background: var(--card-bg); border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; overflow-x: auto; border: 1px solid var(--border); }
+    .table { width: 100%; border-collapse: collapse; min-width: 600px; }
+    .table th, .table td { padding: 0.65rem 0.85rem; text-align: left; border-bottom: 1px solid var(--border); }
+    .table th { background: #f8fafc; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); }
+    .table tbody tr:hover { background: #f8fafc; }
+    .table .empty { color: var(--text-muted); font-style: italic; padding: 1.5rem; text-align: center; }
+    .table .summary-cell { max-width: 220px; font-size: 0.9rem; color: var(--text-muted); }
+    .btn { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.45rem 0.9rem; border-radius: 8px; font-size: 0.875rem; font-weight: 500; cursor: pointer; text-decoration: none; border: none; transition: background .15s, color .15s; }
+    .btn-sm { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-hover); color: #fff; }
+    .btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: #f1f5f9; color: var(--text); }
+    form.inline { display: inline; margin-left: 0.35rem; }
+    .state-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.75rem; font-weight: 500; }
+    .state-awaiting-admin { background: #fef3c7; color: #92400e; }
+    .state-admin-takeover { background: #dbeafe; color: #1e40af; }
+    .state-bot-paused { background: #e5e7eb; color: #374151; }
+    .msg { padding: 0.65rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.9rem; }
+    .msg-success { background: #d1fae5; color: #065f46; }
+    .msg-warn { background: #fef3c7; color: #92400e; }
+    .msg-error { background: #fee2e2; color: #991b1b; }
+    .tag { display: inline-block; padding: 0.2rem 0.5rem; background: #e2e8f0; border-radius: 4px; font-size: 0.8rem; margin: 0.1rem; }
+    .badge { font-size: 0.75rem; padding: 0.15rem 0.4rem; border-radius: 4px; }
+    .badge-p0 { background: #d1fae5; color: #065f46; }
+    .badge-p1 { background: #fef3c7; color: #92400e; }
+    .badge-high { background: #fee2e2; color: #991b1b; }
+    .badge-medium { background: #fef3c7; color: #92400e; }
+    .badge-low { background: #d1fae5; color: #065f46; }
+    pre { background: #f1f5f9; padding: 0.75rem; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; border: 1px solid var(--border); }
+    code { font-family: ui-monospace, monospace; font-size: 0.88em; background: #f1f5f9; padding: 0.15rem 0.35rem; border-radius: 4px; }
+    .yes { color: var(--success); }
+    .no { color: var(--text-muted); }
+    ul.links { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .error { color: var(--error); }
+    @media (max-width: 768px) {
+      body { flex-direction: column; }
+      .sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; }
+      .sidebar-nav { display: flex; flex-wrap: wrap; padding: 0.5rem; }
+      .sidebar-nav a { padding: 0.5rem 0.75rem; }
+    }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-brand"><a href="/">Altegio Admin</a></div>
+    <nav class="sidebar-nav">
+      <a href="/"><span class="nav-icon">◉</span> Дашборд</a>
+      <a href="/on-hold" class="<%= (typeof active !== 'undefined' && active === 'on-hold') ? 'active' : '' %>"><span class="nav-icon">⏸</span> On hold</a>
+      <a href="/conversations"><span class="nav-icon">💬</span> Беседы</a>
+      <a href="/handoffs"><span class="nav-icon">↗</span> Handoff</a>
+      <a href="/test-cases"><span class="nav-icon">✓</span> Тест-кейсы</a>
+      <a href="/mutating-tools"><span class="nav-icon">🔧</span> Mutating tools</a>
+      <a href="/smoke-matrix"><span class="nav-icon">▦</span> Smoke matrix</a>
+      <a href="/policies"><span class="nav-icon">⚙</span> Политики</a>
+      <a href="/reviews"><span class="nav-icon">★</span> Оценки</a>
+    </nav>
+    <div class="sidebar-footer">
+      <form method="post" action="/logout"><button type="submit" class="btn">Выход</button></form>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="main-content">

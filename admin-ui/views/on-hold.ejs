@@ -1,0 +1,44 @@
+<%- include('partials/layoutStart') %>
+<h1 class="page-title">Ожидают ответа (on hold)</h1>
+<p class="page-desc">Беседы, в которых бот не отвечает. Нажмите «Вернуть боту», чтобы снова включить ответы ИИ (как /release в Telegram).</p>
+<% if (typeof released !== 'undefined' && released === '1') { %>
+  <p class="msg msg-success">Беседа возвращена боту. ИИ снова отвечает.</p>
+<% } %>
+<% if (typeof released !== 'undefined' && released === '0') { %>
+  <p class="msg msg-warn">Не удалось вернуть (уже не on hold или не найдена).</p>
+<% } %>
+<% if (typeof error !== 'undefined' && error === '1') { %>
+  <p class="msg msg-error">Ошибка при выполнении.</p>
+<% } %>
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Телефон</th>
+        <th>Статус</th>
+        <th>Обновлено</th>
+        <th>Последний handoff</th>
+        <th>Действия</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (!conversations || conversations.length === 0) { %>
+        <tr><td colspan="5" class="empty">Нет бесед на удержании</td></tr>
+      <% } else { (conversations || []).forEach(c => { %>
+      <tr>
+        <td><code><%= c.client_phone %></code></td>
+        <td><span class="state-badge state-<%= (c.state || '').toLowerCase().replace('_','-') %>"><%= c.state %></span></td>
+        <td><%= c.state_updated_at || '—' %></td>
+        <td class="summary-cell"><%= (c.last_handoff_summary || '—').slice(0, 80) %><%= (c.last_handoff_summary && c.last_handoff_summary.length > 80) ? '…' : '' %></td>
+        <td>
+          <a href="/events/<%= c.conversation_id %>" class="btn btn-ghost btn-sm">События</a>
+          <form class="inline" method="post" action="/conversations/<%= encodeURIComponent(c.conversation_id) %>/release" onsubmit="return confirm('Вернуть боту? ИИ снова будет отвечать в этом чате.');">
+            <button type="submit" class="btn btn-primary btn-sm">Вернуть боту</button>
+          </form>
+        </td>
+      </tr>
+      <% }); } %>
+    </tbody>
+  </table>
+</div>
+<%- include('partials/layoutEnd') %>

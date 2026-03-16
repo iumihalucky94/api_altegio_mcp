@@ -1,5 +1,5 @@
 import type { DbPool } from '../db';
-import { getConversation, setConversationState, shouldBotRespond } from './conversation';
+import { getConversation, setConversationState, shouldBotRespond, updateConversationLanguageAndScenario } from './conversation';
 import { getBehaviorOverride } from './behaviorOverrides';
 import { createHandoffCase, addPendingAction } from './handoff';
 import { getLastMessages, persistMessage } from './messageStore';
@@ -10,7 +10,11 @@ import { callMcp, createHandoffViaMcp } from './mcpClient';
 import { callAiAgent } from './aiAgent';
 import { getKbContext, buildKbContextBlock } from './kb';
 import { classifyIntent, detectLanguage } from './intent';
+import { getSystemMessage, effectiveLangForReply, resolveReplyLanguage, type ResolvedLanguage } from './localization';
+import { intentToScenarioCode, loadPolicyForScenario, isMutatingTool, type ScenarioPolicy } from './scenarioPolicy';
+import { appendConversationEvent } from './conversationEvents';
 import { getDatesToFetch, matchStaffFromMessage } from './bookingContext';
+import { tryDeterministicSchedulingReply } from './deterministicScheduling';
 import type { QueuedMessage } from './debounce';
 
 const AI_CONFIDENCE_THRESHOLD = 0.97;
@@ -74,9 +78,22 @@ export async function processBatch(
 
   const overrides = await getBehaviorOverride(db, clientPhone);
   if (overrides?.force_handoff) {
-    await createHandoffAndPause(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId);
+    const batchTextForHandoff = batch.map((m) => m.text).join('\n');
+    const effectiveLang = resolveReplyLanguage(
+      batchTextForHandoff,
+      (conv.language_hint as string | null) || null,
+      overrides?.language_preference ?? null
+    );
+    await createHandoffAndPause(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, effectiveLang);
     return;
   }
+
+  const batchText = batch.map((m) => m.text).join('\n');
+  const defaultEffectiveLang: ResolvedLanguage = resolveReplyLanguage(
+    batchText,
+    (conv.language_hint as string | null) || null,
+    overrides?.language_preference ?? null
+  );
 
   const apiKey = await getConfigString('OPENAI_API_KEY', '');
   if (apiKey) {
@@ -94,16 +111,16 @@ export async function processBatch(
       tz,
       start,
       end,
-      languageHint
+      languageHint,
+      overrides?.language_preference ?? null
     );
     return;
   }
 
-  const text = batch.map((m) => m.text).join('\n');
-  const lower = text.toLowerCase();
+  const lower = batchText.toLowerCase();
   const hasTrigger = HANDOFF_TRIGGERS.some((t) => lower.includes(t));
   if (hasTrigger) {
-    await createHandoffAndPause(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId);
+    await createHandoffAndPause(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, defaultEffectiveLang);
     return;
   }
 
@@ -116,17 +133,17 @@ export async function processBatch(
     );
     const appointments = (mcpRes.result as { appointments?: unknown[] })?.appointments;
     if (mcpRes.decision === 'ALLOW' && appointments?.length) {
-      const reply = `You have ${appointments.length} upcoming appointment(s). Need to reschedule or cancel? Reply with your request.`;
+      const reply = getSystemMessage('upcoming_appointments', defaultEffectiveLang, { n: appointments.length });
       await sendAndLog(db, clientPhone, reply, conversationId, logger);
       await sendToSummary(`[${clientPhone}] Replied with appointments summary.`);
     } else {
-      const reply = 'Thanks for your message. Our team will get back to you shortly.';
+      const reply = getSystemMessage('generic_reply', defaultEffectiveLang);
       await sendAndLog(db, clientPhone, reply, conversationId, logger);
       await sendToSummary(`[${clientPhone}] Replied with generic message.`);
     }
   } catch (err) {
     logger.error({ err, conversationId }, 'MCP call failed');
-    await createHandoffAndPause(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId);
+    await createHandoffAndPause(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, defaultEffectiveLang);
   }
 }
 
@@ -140,7 +157,8 @@ async function processWithAiAgent(
   tz: string,
   start: string,
   end: string,
-  languageHint: string | null
+  languageHint: string | null,
+  languagePreference: string | null
 ) {
   const first = batch[0];
   const { conversationId, clientPhone } = first;
@@ -148,6 +166,44 @@ async function processWithAiAgent(
 
   const intent = classifyIntent(batchText);
   const lang = detectLanguage(batchText, languageHint);
+  const effectiveLang = effectiveLangForReply(lang, batchText, languageHint, languagePreference);
+  try {
+    await appendConversationEvent(db, conversationId, 'language_detected', { language: effectiveLang, raw: lang });
+  } catch (_) {}
+  const scenarioCode = intentToScenarioCode(intent);
+  try {
+    await appendConversationEvent(db, conversationId, 'intent_detected', { intent });
+    await appendConversationEvent(db, conversationId, 'scenario_selected', { scenario_code: scenarioCode });
+  } catch (_) {}
+  let policy: ScenarioPolicy | null = null;
+  try {
+    policy = await loadPolicyForScenario(db, scenarioCode);
+  } catch (_) {}
+  if (policy) {
+    try {
+      await appendConversationEvent(db, conversationId, 'policy_applied', {
+        scenario_code: policy.scenario_code,
+        allow_agent_to_reply: policy.allow_agent_to_reply,
+        allow_agent_to_execute: policy.allow_agent_to_execute,
+        allow_agent_to_create_handoff: policy.allow_agent_to_create_handoff
+      });
+    } catch (_) {}
+  }
+  try {
+    await updateConversationLanguageAndScenario(db, conversationId, effectiveLang, scenarioCode);
+  } catch (_) {}
+  const safePolicy: ScenarioPolicy = policy ?? {
+    scenario_id: 0,
+    scenario_code: scenarioCode,
+    autonomy_mode: 'ASSIST_ONLY',
+    allow_agent_to_reply: true,
+    allow_agent_to_execute: false,
+    allow_agent_to_create_handoff: true,
+    requires_admin_approval: true,
+    confidence_threshold: AI_CONFIDENCE_THRESHOLD,
+    max_attempts_before_handoff: null,
+    config_json: null
+  };
 
   let appointments: Array<{ id?: string; start?: string; service?: string; master?: string }> = [];
   let services: Array<{ id: number; name?: string }> = [];
@@ -200,6 +256,26 @@ async function processWithAiAgent(
     }
   } catch (_) {}
 
+  if (intent === 'BOOKING' || intent === 'UNKNOWN') {
+    const detResult = await tryDeterministicSchedulingReply({
+      batchText,
+      companyId,
+      requestId,
+      effectiveLang,
+      timezone: tz
+    });
+    if (detResult.applied) {
+      for (const ev of detResult.events) {
+        try {
+          await appendConversationEvent(db, conversationId, ev.event_type, ev.payload);
+        } catch (_) {}
+      }
+      await sendAndLog(db, clientPhone, detResult.reply, conversationId, logger);
+      await sendToSummary(`[${clientPhone}] Deterministic scheduling reply (${detResult.code}), no handoff.`);
+      return;
+    }
+  }
+
   let free_slots: string[] = [];
   if ((intent === 'BOOKING' || intent === 'UNKNOWN') && staff.length > 0 && services.length > 0) {
     const staffId = matchStaffFromMessage(batchText, staff) ?? staff[0].id;
@@ -248,31 +324,62 @@ async function processWithAiAgent(
   );
 
   if (!result) {
-    await createHandoffAndPause(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId);
+    await createHandoffAndPauseWithSummary(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, 'AI agent call failed', effectiveLang, { reason_code: 'ai_agent_failed' });
     await sendToSummary(`[${clientPhone}] AI agent call failed → handoff.`);
     return;
   }
 
-  if (result.confidence < AI_CONFIDENCE_THRESHOLD) {
+  const confidenceThreshold = Math.max(AI_CONFIDENCE_THRESHOLD, safePolicy.confidence_threshold);
+  if (result.confidence < confidenceThreshold) {
     const summary = result.handoff?.summary || `Low confidence (${result.confidence}); tags: ${(result.tags || []).join(', ') || 'none'}`;
-    await createHandoffAndPauseWithSummary(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, summary);
-    await sendToSummary(`[${clientPhone}] Confidence ${result.confidence} < ${AI_CONFIDENCE_THRESHOLD} → handoff.`);
+    const ctx: HandoffContext = {
+      reason_code: 'low_confidence',
+      confidence: result.confidence,
+      decision: result.decision,
+      reply_text_preview: result.reply_text ?? undefined,
+      tags: result.tags ?? undefined
+    };
+    await createHandoffAndPauseWithSummary(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, summary, effectiveLang, ctx);
     return;
   }
 
   if (result.decision === 'HANDOFF') {
+    if (!safePolicy.allow_agent_to_create_handoff) {
+      if (safePolicy.allow_agent_to_reply && result.reply_text) await sendAndLog(db, clientPhone, result.reply_text, conversationId, logger);
+      else await sendAndLog(db, clientPhone, getSystemMessage('generic_ack', effectiveLang), conversationId, logger);
+      await sendToSummary(`[${clientPhone}] AI HANDOFF but policy disallows handoff → reply only.`);
+      return;
+    }
     const summary = result.handoff?.summary || result.handoff?.reason || batchText.slice(0, 200);
-    await createHandoffAndPauseWithSummary(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, summary);
+    const ctx: HandoffContext = {
+      reason_code: 'ai_handoff',
+      confidence: result.confidence,
+      decision: 'HANDOFF',
+      reply_text_preview: result.reply_text ?? undefined,
+      tags: result.tags ?? undefined
+    };
+    await createHandoffAndPauseWithSummary(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, summary, effectiveLang, ctx);
     if (result.reply_text) await sendAndLog(db, clientPhone, result.reply_text, conversationId, logger);
-    await sendToSummary(`[${clientPhone}] AI HANDOFF: ${summary.slice(0, 80)}...`);
     return;
   }
 
   if (result.decision === 'NEED_APPROVAL') {
+    if (!safePolicy.allow_agent_to_create_handoff) {
+      if (safePolicy.allow_agent_to_reply && result.reply_text) await sendAndLog(db, clientPhone, result.reply_text, conversationId, logger);
+      else await sendAndLog(db, clientPhone, getSystemMessage('generic_ack', effectiveLang), conversationId, logger);
+      await sendToSummary(`[${clientPhone}] NEED_APPROVAL but policy disallows handoff → reply only.`);
+      return;
+    }
     const summary = result.handoff?.summary || `Approval requested: ${batchText.slice(0, 150)}`;
-    await createHandoffAndPauseWithSummary(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, summary);
+    const ctx: HandoffContext = {
+      reason_code: 'need_approval',
+      confidence: result.confidence,
+      decision: 'NEED_APPROVAL',
+      reply_text_preview: result.reply_text ?? undefined,
+      tags: result.tags ?? undefined
+    };
+    await createHandoffAndPauseWithSummary(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, summary, effectiveLang, ctx);
     if (result.reply_text) await sendAndLog(db, clientPhone, result.reply_text, conversationId, logger);
-    await sendToSummary(`[${clientPhone}] NEED_APPROVAL → handoff. ${summary.slice(0, 60)}...`);
     return;
   }
 
@@ -283,20 +390,36 @@ async function processWithAiAgent(
       for (const item of result.mcp_calls) {
         const tool = typeof (item as any)?.tool === 'string' ? (item as any).tool : null;
         const payload = (item as any)?.payload && typeof (item as any).payload === 'object' ? (item as any).payload : {};
-        if (tool) {
+        if (!tool) continue;
+        if (isMutatingTool(tool) && !safePolicy.allow_agent_to_execute) {
+          logger.info({ tool, conversationId, scenarioCode: safePolicy.scenario_code }, 'MCP mutating tool skipped by policy (allow_agent_to_execute=false)');
           try {
-            await callMcp(tool, payload, companyId, requestId);
-            if (tool === 'crm.create_appointment') createAppointmentSucceeded = true;
-            logger.info({ tool, conversationId }, 'MCP call from AI executed');
-          } catch (err) {
-            logger.warn({ err, tool, conversationId }, 'MCP call from AI failed');
-            if (tool === 'crm.create_appointment') createAppointmentFailed = true;
-          }
+            await appendConversationEvent(db, conversationId, 'execution_denied_by_policy', { tool, reason: 'allow_agent_to_execute=false' });
+          } catch (_) {}
+          if (tool === 'crm.create_appointment') createAppointmentFailed = true;
+          continue;
+        }
+        try {
+          await appendConversationEvent(db, conversationId, 'tool_called', { tool });
+        } catch (_) {}
+        try {
+          await callMcp(tool, payload, companyId, requestId);
+          if (tool === 'crm.create_appointment') createAppointmentSucceeded = true;
+          logger.info({ tool, conversationId }, 'MCP call from AI executed');
+          try {
+            await appendConversationEvent(db, conversationId, 'tool_succeeded', { tool });
+          } catch (_) {}
+        } catch (err) {
+          logger.warn({ err, tool, conversationId }, 'MCP call from AI failed');
+          try {
+            await appendConversationEvent(db, conversationId, 'tool_failed', { tool, error: String((err as Error)?.message ?? err) });
+          } catch (_) {}
+          if (tool === 'crm.create_appointment') createAppointmentFailed = true;
         }
       }
     }
     if (createAppointmentFailed) {
-      const neutralMsg = 'Leider ist bei der Buchung etwas schiefgelaufen. Ich habe Ihre Anfrage an unser Team weitergeleitet – wir melden uns in Kürze bei Ihnen.';
+      const neutralMsg = getSystemMessage('booking_failed', effectiveLang);
       await sendAndLog(db, clientPhone, neutralMsg, conversationId, logger);
       await createHandoffAndPauseWithSummary(
         db,
@@ -306,7 +429,9 @@ async function processWithAiAgent(
         logger,
         sendToSummary,
         requestId,
-        'Booking API failed (slot conflict or validation); client needs alternative or manual booking.'
+        'Booking API failed (slot conflict or validation); client needs alternative or manual booking.',
+        effectiveLang,
+        { reason_code: 'booking_failed', reply_text_preview: result.reply_text ?? undefined }
       );
       await sendToSummary(`[${clientPhone}] create_appointment failed → handoff.`);
       return;
@@ -314,7 +439,7 @@ async function processWithAiAgent(
     const replyLooksConfirmed = /подтвержден|confirmed|забронирован|booked|подходит|записал|записала/i.test(result.reply_text ?? '');
     if (replyLooksConfirmed && !createAppointmentSucceeded) {
       logger.warn({ conversationId }, 'AI claimed booking confirmed but create_appointment was not executed → escalate');
-      const neutralMsg = 'Leider kann ich die Buchung nicht automatisch bestätigen. Ich habe Ihre Anfrage an unser Team weitergeleitet – wir melden uns in Kürze bei Ihnen.';
+      const neutralMsg = getSystemMessage('booking_not_confirmed_fallback', effectiveLang);
       await sendAndLog(db, clientPhone, neutralMsg, conversationId, logger);
       await createHandoffAndPauseWithSummary(
         db,
@@ -324,20 +449,36 @@ async function processWithAiAgent(
         logger,
         sendToSummary,
         requestId,
-        'AI replied "confirmed" without successful create_appointment; needs manual booking.'
+        'AI replied "confirmed" without successful create_appointment; needs manual booking.',
+        effectiveLang,
+        { reason_code: 'fake_confirmation_blocked', reply_text_preview: result.reply_text ?? undefined }
       );
       await sendToSummary(`[${clientPhone}] Fake confirmation blocked → handoff.`);
       return;
     }
-    if (result.reply_text) {
-      await sendAndLog(db, clientPhone, result.reply_text, conversationId, logger);
-      await sendToSummary(`[${clientPhone}] AI RESPOND (confidence ${result.confidence}).`);
-    } else {
-      const fallback = 'Vielen Dank für Ihre Nachricht. Unser Team meldet sich in Kürze bei Ihnen.';
-      await sendAndLog(db, clientPhone, fallback, conversationId, logger);
-      await sendToSummary(`[${clientPhone}] AI RESPOND but no reply_text → fallback.`);
+    const replyToSend = !safePolicy.allow_agent_to_reply
+      ? getSystemMessage('generic_ack', effectiveLang)
+      : (result.reply_text || getSystemMessage('generic_ack', effectiveLang));
+    if (!safePolicy.allow_agent_to_reply) {
+      try {
+        await appendConversationEvent(db, conversationId, 'reply_blocked', { reason: 'allow_agent_to_reply=false' });
+      } catch (_) {}
     }
+    try {
+      await appendConversationEvent(db, conversationId, 'reply_sent', { length: replyToSend.length });
+    } catch (_) {}
+    await sendAndLog(db, clientPhone, replyToSend, conversationId, logger);
+    await sendToSummary(`[${clientPhone}] AI RESPOND (confidence ${result.confidence}).`);
   }
+}
+
+/** Context for why handoff happened (for audit and Telegram). */
+export interface HandoffContext {
+  reason_code: string;
+  confidence?: number;
+  decision?: string;
+  reply_text_preview?: string;
+  tags?: string[];
 }
 
 async function createHandoffAndPause(
@@ -347,10 +488,11 @@ async function createHandoffAndPause(
   batch: QueuedMessage[],
   logger: any,
   sendToSummary: (msg: string) => Promise<void>,
-  requestId: string
+  requestId: string,
+  effectiveLang: ResolvedLanguage
 ) {
   const summary = `Handoff: ${batch.map((m) => m.text).join(' ').slice(0, 200)}`;
-  await createHandoffAndPauseWithSummary(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, summary);
+  await createHandoffAndPauseWithSummary(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, summary, effectiveLang, { reason_code: 'legacy_handoff' });
 }
 
 async function createHandoffAndPauseWithSummary(
@@ -361,8 +503,21 @@ async function createHandoffAndPauseWithSummary(
   logger: any,
   sendToSummary: (msg: string) => Promise<void>,
   requestId: string,
-  summary: string
+  summary: string,
+  effectiveLang: ResolvedLanguage,
+  handoffContext?: HandoffContext
 ) {
+  const payload: Record<string, unknown> = { summary: summary.slice(0, 500) };
+  if (handoffContext) {
+    payload.reason_code = handoffContext.reason_code;
+    if (handoffContext.confidence != null) payload.confidence = handoffContext.confidence;
+    if (handoffContext.decision) payload.decision = handoffContext.decision;
+    if (handoffContext.reply_text_preview) payload.reply_text_preview = handoffContext.reply_text_preview.slice(0, 300);
+    if (handoffContext.tags?.length) payload.tags = handoffContext.tags;
+  }
+  try {
+    await appendConversationEvent(db, conversationId, 'handoff_created', payload);
+  } catch (_) {}
   const companyId = Number(await getConfig('DEFAULT_COMPANY_ID')) || 1169276;
   const questionToAdmin = 'Please handle this conversation.';
   const lastMessages = (await getLastMessages(db, conversationId, 10)).map((m) => ({
@@ -383,7 +538,7 @@ async function createHandoffAndPauseWithSummary(
     caseId
   });
   await setConversationState(db, conversationId, 'AWAITING_ADMIN');
-  const pauseMsg = 'I forwarded your message to our team. They will get back to you as soon as possible.';
+  const pauseMsg = getSystemMessage('handoff_ack', effectiveLang);
   await sendAndLog(db, clientPhone, pauseMsg, conversationId, logger);
   try {
     await createHandoffViaMcp(
@@ -396,5 +551,13 @@ async function createHandoffAndPauseWithSummary(
       requestId
     );
   } catch (_) {}
-  await sendToSummary(`[${clientPhone}] Handoff case ${caseId}: ${summary.slice(0, 80)}...`);
+  let telegramLine = `[${clientPhone}] Handoff case ${caseId}: ${summary.slice(0, 80)}...`;
+  if (handoffContext) {
+    telegramLine += `\nПричина: ${handoffContext.reason_code}`;
+    if (handoffContext.confidence != null) telegramLine += ` | уверенность: ${handoffContext.confidence}`;
+    if (handoffContext.decision) telegramLine += ` | решение ИИ: ${handoffContext.decision}`;
+    if (handoffContext.reply_text_preview) telegramLine += `\nОтвет ИИ (не отправлен): ${handoffContext.reply_text_preview.slice(0, 150)}...`;
+    if (handoffContext.tags?.length) telegramLine += `\nТеги: ${handoffContext.tags.join(', ')}`;
+  }
+  await sendToSummary(telegramLine);
 }

@@ -25,6 +25,82 @@ const EN_MONTHS: Record<string, number> = {
   july: 7, august: 8, september: 9, october: 10, november: 11, december: 12
 };
 
+const TZ_DEFAULT = 'Europe/Vienna';
+
+/**
+ * Resolve relative date expressions to YYYY-MM-DD (and optional time) in salon timezone.
+ * Handles: завтра/послезавтра, tomorrow/day after tomorrow, morgen/übermorgen,
+ * в понедельник / next Monday / nächsten Montag (and other weekdays).
+ * Returns { date, time? } or null if no relative expression found.
+ */
+export function resolveRelativeDate(
+  text: string,
+  timezone: string = TZ_DEFAULT
+): { date: string; time?: string } | null {
+  if (!text || typeof text !== 'string') return null;
+  const t = text.trim().toLowerCase();
+  const now = new Date();
+  const todayYmd = now.toLocaleDateString('en-CA', { timeZone: timezone });
+
+  const addDays = (ymd: string, days: number): string => {
+    const d = new Date(ymd + 'T12:00:00');
+    d.setDate(d.getDate() + days);
+    return d.toLocaleDateString('en-CA', { timeZone: timezone });
+  };
+
+  const relativeDay: Record<string, number> = {
+    завтра: 1, послезавтра: 2,
+    tomorrow: 1, 'day after tomorrow': 2, 'day after': 2,
+    morgen: 1, übermorgen: 2, uebermorgen: 2
+  };
+  for (const [phrase, days] of Object.entries(relativeDay)) {
+    if (t.includes(phrase)) {
+      const date = addDays(todayYmd, days);
+      return { date };
+    }
+  }
+
+  const weekdaysRu: Record<string, number> = {
+    понедельник: 1, вторник: 2, среда: 3, четверг: 4, пятница: 5, суббота: 6, воскресенье: 0
+  };
+  const weekdaysEn: Record<string, number> = {
+    monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6, sunday: 0
+  };
+  const weekdaysDe: Record<string, number> = {
+    montag: 1, dienstag: 2, mittwoch: 3, donnerstag: 4, freitag: 5, samstag: 6, sonntag: 0
+  };
+
+  const matchWeekday = (map: Record<string, number>): number | null => {
+    for (const [name, dow] of Object.entries(map)) {
+      if (t.includes(name)) return dow;
+    }
+    return null;
+  };
+
+  let targetDow: number | null = matchWeekday(weekdaysRu) ?? matchWeekday(weekdaysEn) ?? matchWeekday(weekdaysDe);
+  const hasNext = /\b(следующ|next|nächsten|naechsten|на)\b/i.test(t) || /в (о)?\s*(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье)/i.test(t);
+  if (targetDow == null) {
+    const ruAccusative: Record<string, number> = { понедельник: 1, вторник: 2, среду: 3, четверг: 4, пятницу: 5, субботу: 6, воскресенье: 0 };
+    for (const [name, dow] of Object.entries(ruAccusative)) {
+      if (t.includes(name)) {
+        targetDow = dow;
+        break;
+      }
+    }
+  }
+  if (targetDow != null) {
+    const today = new Date(todayYmd + 'T12:00:00');
+    const currentDow = today.getDay();
+    let daysAhead = (targetDow - currentDow + 7) % 7;
+    if (daysAhead === 0 && hasNext) daysAhead = 7;
+    else if (daysAhead === 0 && !hasNext) daysAhead = 0;
+    const date = addDays(todayYmd, daysAhead);
+    return { date };
+  }
+
+  return null;
+}
+
 /**
  * Extract a date from message text. Returns YYYY-MM-DD or null.
  * Handles: "18 марта", "18.03", "18.03.2026", "18 марта 2026", "March 18", "18th March", "на 18"

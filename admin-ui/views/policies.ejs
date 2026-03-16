@@ -1,0 +1,44 @@
+<%- include('partials/layoutStart') %>
+<h1 class="page-title">Политики сценариев</h1>
+<p class="page-desc">Редактирование reply / execute / handoff. Сохраняется в БД.</p>
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Сценарий</th>
+        <th>Название</th>
+        <th>autonomy_mode</th>
+        <th>reply</th>
+        <th>execute</th>
+        <th>handoff</th>
+        <th>approval</th>
+        <th>confidence_threshold</th>
+        <th>Действие</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% (policies || []).forEach(p => { %>
+      <tr>
+        <td><code><%= p.code %></code></td>
+        <td><%= p.name %></td>
+        <td><%= p.autonomy_mode %></td>
+        <td class="<%= p.allow_agent_to_reply ? 'yes' : 'no' %>"><%= p.allow_agent_to_reply ? '✓' : '✗' %></td>
+        <td class="<%= p.allow_agent_to_execute ? 'yes' : 'no' %>"><%= p.allow_agent_to_execute ? '✓' : '✗' %></td>
+        <td class="<%= p.allow_agent_to_create_handoff ? 'yes' : 'no' %>"><%= p.allow_agent_to_create_handoff ? '✓' : '✗' %></td>
+        <td class="<%= p.requires_admin_approval ? 'yes' : 'no' %>"><%= p.requires_admin_approval ? '✓' : '✗' %></td>
+        <td><%= p.confidence_threshold %></td>
+        <td>
+          <form class="inline" method="post" action="/policies/update">
+            <input type="hidden" name="policy_id" value="<%= p.policy_id %>">
+            <label><input type="checkbox" name="allow_agent_to_reply" <%= p.allow_agent_to_reply ? 'checked' : '' %>> reply</label>
+            <label><input type="checkbox" name="allow_agent_to_execute" <%= p.allow_agent_to_execute ? 'checked' : '' %>> execute</label>
+            <label><input type="checkbox" name="allow_agent_to_create_handoff" <%= p.allow_agent_to_create_handoff ? 'checked' : '' %>> handoff</label>
+            <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
+          </form>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+<%- include('partials/layoutEnd') %>
