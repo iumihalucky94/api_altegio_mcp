@@ -77,6 +77,28 @@ async function getAvailabilityForDate(
   }
 }
 
+/** Ask gateway for free slots of a specific staff/service on a date. */
+async function getFreeSlotsForStaffOnDate(
+  companyId: number,
+  staffId: number,
+  serviceId: number,
+  date: string,
+  requestId: string
+): Promise<string[]> {
+  try {
+    const res = await callMcp(
+      'crm.get_free_slots',
+      { company_id: companyId, staff_id: staffId, service_id: serviceId, date },
+      companyId,
+      requestId
+    );
+    const r = res.result as { free_slots?: string[] };
+    return Array.isArray(r?.free_slots) ? r.free_slots : [];
+  } catch {
+    return [];
+  }
+}
+
 function addDays(ymd: string, days: number, timezone: string = 'Europe/Vienna'): string {
   const d = new Date(ymd + 'T12:00:00');
   d.setDate(d.getDate() + days);
@@ -101,8 +123,9 @@ function formatDateLabel(ymd: string, lang: ResolvedLanguage): string {
 }
 
 /**
- * Try deterministic scheduling reply: one call "is there any window for this date?".
- * Does not require staff/services from orchestrator; gateway resolves them.
+ * Try deterministic scheduling reply: booking availability with deterministic rules.
+ * Supports staff preference hierarchy via explicit / preferred staff IDs.
+ * Optional preferredStaffName: when showing staff-specific slots, mention this master if provided.
  */
 export async function tryDeterministicSchedulingReply(params: {
   batchText: string;
@@ -110,8 +133,26 @@ export async function tryDeterministicSchedulingReply(params: {
   requestId: string;
   effectiveLang: ResolvedLanguage;
   timezone: string;
+  /** If set, slots reply will mention this master (e.g. "У Светланы на четверг..."). */
+  preferredStaffName?: string;
+  /** Explicit staff selected from message text, if any. */
+  explicitStaffId?: number;
+  /** Preferred staff resolved from client history, if any. */
+  preferredStaffId?: number;
+  /** Service to use for deterministic booking availability. */
+  serviceIdForBooking?: number;
 }): Promise<DeterministicResult | DeterministicNoResult> {
-  const { batchText, companyId, requestId, effectiveLang, timezone } = params;
+  const {
+    batchText,
+    companyId,
+    requestId,
+    effectiveLang,
+    timezone,
+    preferredStaffName,
+    explicitStaffId,
+    preferredStaffId,
+    serviceIdForBooking
+  } = params;
   const events: Array<{ event_type: string; payload?: Record<string, unknown> }> = [];
 
   const requestedDate = getRequestedDateFromMessage(batchText, timezone);
@@ -129,6 +170,44 @@ export async function tryDeterministicSchedulingReply(params: {
     return { applied: true, reply, code: DETERMINISTIC_CODES.SERVICE_TYPE_CLARIFICATION, alternativeSlots: [], events };
   }
 
+  // 1) Staff-specific branch: if we know explicit or preferred staff AND service, сначала пробуем его.
+  const staffIdForSpecific = explicitStaffId ?? preferredStaffId;
+  if (staffIdForSpecific != null && Number.isFinite(staffIdForSpecific) && serviceIdForBooking != null && Number.isFinite(serviceIdForBooking)) {
+    const staffSlots = await getFreeSlotsForStaffOnDate(
+      companyId,
+      staffIdForSpecific,
+      serviceIdForBooking,
+      requestedDate,
+      requestId
+    );
+    if (staffSlots.length > 0) {
+      const slotsText = formatSlotsForMessage(staffSlots);
+      const dateLabel = formatDateLabel(requestedDate, effectiveLang);
+      const reply = preferredStaffName
+        ? getSystemMessage('slots_available_with_master', effectiveLang, {
+            masterName: preferredStaffName,
+            date: dateLabel,
+            slots: slotsText
+          })
+        : getSystemMessage('slots_available', effectiveLang, {
+            date: dateLabel,
+            slots: slotsText
+          });
+      events.push({
+        event_type: 'deterministic_reply_sent',
+        payload: { code: DETERMINISTIC_CODES.SLOTS_AVAILABLE, staff_id: staffIdForSpecific, staff_specific: true }
+      });
+      return {
+        applied: true,
+        reply,
+        code: DETERMINISTIC_CODES.SLOTS_AVAILABLE,
+        alternativeSlots: staffSlots,
+        events
+      };
+    }
+  }
+
+  // 2) Generic all-staff availability via gateway helper.
   const { free_slots: slotsOnRequested, working_hours_count: workingHoursCount } = await getAvailabilityForDate(
     companyId,
     requestedDate,
@@ -167,7 +246,9 @@ export async function tryDeterministicSchedulingReply(params: {
   if (slotsOnRequested.length > 0) {
     const slotsText = formatSlotsForMessage(slotsOnRequested);
     const dateLabel = formatDateLabel(requestedDate, effectiveLang);
-    const reply = getSystemMessage('slots_available', effectiveLang, { date: dateLabel, slots: slotsText });
+    const reply = preferredStaffName
+      ? getSystemMessage('slots_available_with_master', effectiveLang, { masterName: preferredStaffName, date: dateLabel, slots: slotsText })
+      : getSystemMessage('slots_available', effectiveLang, { date: dateLabel, slots: slotsText });
     events.push({ event_type: 'alternative_slots_found', payload: { count: slotsOnRequested.length } });
     events.push({ event_type: 'deterministic_reply_sent', payload: { code: DETERMINISTIC_CODES.SLOTS_AVAILABLE } });
     return { applied: true, reply, code: DETERMINISTIC_CODES.SLOTS_AVAILABLE, alternativeSlots: slotsOnRequested, events };

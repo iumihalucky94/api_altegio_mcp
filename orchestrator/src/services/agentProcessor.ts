@@ -326,12 +326,41 @@ async function processWithAiAgent(
   } catch (_) {}
 
   if (intent === 'BOOKING' || intent === 'UNKNOWN') {
+    // Staff preference hierarchy for deterministic path:
+    // 1) explicit staff from message; 2) preferred staff from client history; 3) generic all-staff.
+    let explicitStaffId: number | undefined;
+    let preferredStaffId: number | undefined;
+    let preferredStaffName: string | undefined;
+
+    if (staff.length > 0) {
+      const matchedFromMessage = matchStaffFromMessage(batchText, staff);
+      if (matchedFromMessage != null) explicitStaffId = matchedFromMessage;
+    }
+
+    if (appointments.length > 0 && staff.length > 0) {
+      const lastAppt = appointments[0];
+      const masterName = (lastAppt.master ?? '').toString().trim().toLowerCase();
+      if (masterName) {
+        const matched = staff.find((s) => (s.name ?? '').toLowerCase().includes(masterName));
+        if (matched) {
+          preferredStaffId = matched.id;
+          preferredStaffName = matched.name;
+        }
+      }
+    }
+
+    const serviceIdForBooking = services.length > 0 ? services[0].id : undefined;
+
     const detResult = await tryDeterministicSchedulingReply({
       batchText,
       companyId,
       requestId,
       effectiveLang,
-      timezone: tz
+      timezone: tz,
+      preferredStaffName,
+      explicitStaffId,
+      preferredStaffId,
+      serviceIdForBooking
     });
     if (detResult.applied) {
       for (const ev of detResult.events) {

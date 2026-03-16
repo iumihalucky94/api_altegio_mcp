@@ -1,0 +1,1 @@
+{"version":3,"file":"conversationEvents.d.ts","sourceRoot":"","sources":["../../src/services/conversationEvents.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,MAAM,EAAE,MAAM,OAAO,CAAC;AAEpC,wBAAsB,uBAAuB,CAC3C,EAAE,EAAE,MAAM,EACV,cAAc,EAAE,MAAM,EACtB,SAAS,EAAE,MAAM,EACjB,OAAO,CAAC,EAAE,MAAM,CAAC,MAAM,EAAE,OAAO,CAAC,GAChC,OAAO,CAAC,IAAI,CAAC,CAMf"}

@@ -57,9 +57,14 @@ const MESSAGES: Record<string, Record<ResolvedLanguage, string>> = {
     en: 'Here are some options: {{slots}}'
   },
   slots_available: {
-    de: 'Am {{date}} haben wir folgende freie Termine:\n{{slots}}\n\nPasst Ihnen einer dieser Termine?',
-    ru: 'На {{date}} есть такие варианты:\n{{slots}}\n\nПодойдёт ли вам что-то из этого?',
-    en: 'On {{date}} we have these options:\n{{slots}}\n\nWould any of these work for you?'
+    de: 'Am {{date}} haben wir freie Termine (bei einem unserer Team-Mitglieder):\n{{slots}}\n\nPasst Ihnen einer dieser Termine?',
+    ru: 'На {{date}} есть такие варианты (общая доступность):\n{{slots}}\n\nПодойдёт ли вам что-то из этого?',
+    en: 'On {{date}} we have these options (any available staff):\n{{slots}}\n\nWould any of these work for you?'
+  },
+  slots_available_with_master: {
+    de: 'Bei {{masterName}} am {{date}} gibt es folgende freie Termine:\n{{slots}}\n\nPasst Ihnen einer davon?',
+    ru: 'У {{masterName}} на {{date}} есть такие варианты:\n{{slots}}\n\nПодойдёт ли вам что-то из этого?',
+    en: 'With {{masterName}} on {{date}} we have these options:\n{{slots}}\n\nWould any of these work for you?'
   },
   day_alternatives: {
     de: 'An diesem Tag haben wir geschlossen. Wie passt es Ihnen an {{days}}?',

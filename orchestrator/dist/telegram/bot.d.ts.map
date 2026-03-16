@@ -1,0 +1,1 @@
+{"version":3,"file":"bot.d.ts","sourceRoot":"","sources":["../../src/telegram/bot.ts"],"names":[],"mappings":"AACA,OAAO,KAAK,EAAE,MAAM,EAAE,MAAM,OAAO,CAAC;AAwBpC,wBAAsB,gBAAgB,CAAC,EAAE,EAAE,MAAM,EAAE,KAAK,EAAE,MAAM,EAAE,GAAG,EAAE,GAAG;uBAKxC,MAAM;wBAQL,MAAM;GAuKxC"}
