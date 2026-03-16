@@ -57,14 +57,19 @@ const MESSAGES: Record<string, Record<ResolvedLanguage, string>> = {
     en: 'Here are some options: {{slots}}'
   },
   slots_available: {
-    de: 'Am {{date}} haben wir folgende freie Termine: {{slots}}. Möchten Sie einen davon buchen?',
-    ru: 'На {{date}} есть такие окна: {{slots}}. Хотите записаться на одно из них?',
-    en: 'On {{date}} we have these free slots: {{slots}}. Would you like to book one?'
+    de: 'Am {{date}} haben wir folgende freie Termine:\n{{slots}}\n\nPasst Ihnen einer dieser Termine?',
+    ru: 'На {{date}} есть такие варианты:\n{{slots}}\n\nПодойдёт ли вам что-то из этого?',
+    en: 'On {{date}} we have these options:\n{{slots}}\n\nWould any of these work for you?'
   },
   day_alternatives: {
     de: 'An diesem Tag haben wir geschlossen. Wie passt es Ihnen an {{days}}?',
     ru: 'В этот день мы не работаем. Как вам будет удобнее — в {{days}}?',
     en: 'We are closed on that day. Would {{days}} work for you?'
+  },
+  lash_service_clarification: {
+    de: 'Damit ich passende Termine für Wimpern vorschlagen kann: Benötigen Sie ein neues Set oder eine Auffüllung?',
+    ru: 'Чтобы подобрать вам подходящее время на ресницы, подскажите, пожалуйста: вам нужна коррекция или новое наращивание?',
+    en: 'To suggest the right lash appointment, could you please tell me if you need a refill or a new full set?'
   }
 };
 

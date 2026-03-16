@@ -16,7 +16,8 @@ export const DETERMINISTIC_CODES = {
   WORKING_TIME_VIOLATION: 'WORKING_TIME_VIOLATION',
   SERVICE_DOES_NOT_FIT_SLOT: 'SERVICE_DOES_NOT_FIT_SLOT',
   ALTERNATIVE_SLOTS_OFFERED: 'ALTERNATIVE_SLOTS_OFFERED',
-  SLOTS_AVAILABLE: 'SLOTS_AVAILABLE'
+  SLOTS_AVAILABLE: 'SLOTS_AVAILABLE',
+  SERVICE_TYPE_CLARIFICATION: 'SERVICE_TYPE_CLARIFICATION'
 } as const;
 
 export interface DeterministicResult {
@@ -33,6 +34,19 @@ export interface DeterministicNoResult {
 
 const MAX_ALTERNATIVE_DAYS = 5;
 const MAX_ALTERNATIVE_SLOTS = 10;
+
+function isGenericLashBooking(text: string): boolean {
+  if (!text) return false;
+  const t = text.toLowerCase();
+  return /\b(реснич|ресниц|wimpern|lashes?|lash)\b/.test(t);
+}
+
+function hasExplicitServiceType(text: string): boolean {
+  if (!text) return false;
+  const t = text.toLowerCase();
+  // Corrections / refills / full set markers in RU/DE/EN.
+  return /\b(коррекц|refill|auff[üu]llung|full set|neues set|new set|полное наращивани|новое наращивани)\b/.test(t);
+}
 
 function getRequestedDateFromMessage(text: string, timezone: string): string | null {
   const relative = resolveRelativeDate(text, timezone);
@@ -69,15 +83,14 @@ function addDays(ymd: string, days: number, timezone: string = 'Europe/Vienna'):
   return d.toLocaleDateString('en-CA', { timeZone: timezone });
 }
 
-function formatSlotsForMessage(slots: string[], maxItems: number = 8): string {
+function formatSlotsForMessage(slots: string[], maxItems: number = 3): string {
   const taken = slots.slice(0, maxItems);
   const parts = taken.map((s) => {
     const d = new Date(s);
-    const date = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
     const time = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-    return `${date} ${time}`;
+    return time;
   });
-  return parts.join(', ');
+  return parts.join('\n');
 }
 
 function formatDateLabel(ymd: string, lang: ResolvedLanguage): string {
@@ -105,6 +118,16 @@ export async function tryDeterministicSchedulingReply(params: {
   if (!requestedDate) return { applied: false };
 
   events.push({ event_type: 'relative_date_resolved', payload: { requested_date: requestedDate } });
+
+  // For generic lash booking without explicit service type, ask clarification first instead of showing slots.
+  if (isGenericLashBooking(batchText) && !hasExplicitServiceType(batchText)) {
+    const reply = getSystemMessage('lash_service_clarification', effectiveLang);
+    events.push({
+      event_type: 'deterministic_reply_sent',
+      payload: { code: DETERMINISTIC_CODES.SERVICE_TYPE_CLARIFICATION }
+    });
+    return { applied: true, reply, code: DETERMINISTIC_CODES.SERVICE_TYPE_CLARIFICATION, alternativeSlots: [], events };
+  }
 
   const { free_slots: slotsOnRequested, working_hours_count: workingHoursCount } = await getAvailabilityForDate(
     companyId,

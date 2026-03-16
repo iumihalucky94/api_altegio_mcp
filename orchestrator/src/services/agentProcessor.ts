@@ -347,7 +347,17 @@ async function processWithAiAgent(
 
   let free_slots: string[] = [];
   if ((intent === 'BOOKING' || intent === 'UNKNOWN') && staff.length > 0 && services.length > 0) {
-    const staffId = matchStaffFromMessage(batchText, staff) ?? staff[0].id;
+    // Try to respect preferred master based on upcoming appointments, then fall back to staff mentioned in text, then first staff.
+    let preferredStaffId: number | undefined;
+    if (appointments.length > 0) {
+      const lastAppt = appointments[0];
+      const masterName = (lastAppt.master ?? '').toString().trim().toLowerCase();
+      if (masterName) {
+        const matched = staff.find((s) => (s.name ?? '').toLowerCase().includes(masterName));
+        if (matched) preferredStaffId = matched.id;
+      }
+    }
+    const staffId = matchStaffFromMessage(batchText, staff) ?? preferredStaffId ?? staff[0].id;
     const datesToFetch = getDatesToFetch(batchText);
     for (const date of datesToFetch) {
       try {
