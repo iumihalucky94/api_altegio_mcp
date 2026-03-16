@@ -11,9 +11,15 @@ import { callAiAgent } from './aiAgent';
 import { getKbContext, buildKbContextBlock } from './kb';
 import { classifyIntent, detectLanguage } from './intent';
 import { getSystemMessage, effectiveLangForReply, resolveReplyLanguage, type ResolvedLanguage } from './localization';
-import { intentToScenarioCode, loadPolicyForScenario, isMutatingTool, type ScenarioPolicy } from './scenarioPolicy';
+import { intentToScenarioCode, isMutatingTool, type ScenarioPolicy } from './scenarioPolicy';
 import { appendConversationEvent } from './conversationEvents';
 import { getDatesToFetch, matchStaffFromMessage } from './bookingContext';
+import { routeScenario } from './scenarioRouter';
+import { buildClientContext } from './clientContext';
+import { evaluatePolicy } from './policySpecialist';
+import { assembleDecisionSkeleton } from './decisionAssembler';
+import { evaluateBooking } from './bookingSpecialist';
+import type { DecisionObject } from '../types/contracts';
 import { tryDeterministicSchedulingReply } from './deterministicScheduling';
 import type { QueuedMessage } from './debounce';
 
@@ -164,9 +170,14 @@ async function processWithAiAgent(
   const { conversationId, clientPhone } = first;
   const batchText = batch.map((m) => m.text).join('\n');
 
-  const intent = classifyIntent(batchText);
-  const lang = detectLanguage(batchText, languageHint);
-  const effectiveLang = effectiveLangForReply(lang, batchText, languageHint, languagePreference);
+  const routed = routeScenario({
+    text: batchText,
+    languageHint,
+    languagePreference
+  });
+  const intent = routed.intent;
+  const lang = routed.languageCode;
+  const effectiveLang = routed.effectiveLanguage;
   try {
     await appendConversationEvent(db, conversationId, 'language_detected', { language: effectiveLang, raw: lang });
   } catch (_) {}
@@ -176,9 +187,38 @@ async function processWithAiAgent(
     await appendConversationEvent(db, conversationId, 'scenario_selected', { scenario_code: scenarioCode });
   } catch (_) {}
   let policy: ScenarioPolicy | null = null;
+  let safePolicy: ScenarioPolicy;
+  let policyResult;
   try {
-    policy = await loadPolicyForScenario(db, scenarioCode);
-  } catch (_) {}
+    const { safePolicy: sp, result } = await evaluatePolicy(db, scenarioCode as any);
+    safePolicy = sp;
+    policyResult = result;
+    policy = result.policy;
+  } catch (_) {
+    safePolicy = {
+      scenario_id: 0,
+      scenario_code: scenarioCode,
+      autonomy_mode: 'ASSIST_ONLY',
+      allow_agent_to_reply: true,
+      allow_agent_to_execute: false,
+      allow_agent_to_create_handoff: true,
+      requires_admin_approval: true,
+      confidence_threshold: AI_CONFIDENCE_THRESHOLD,
+      max_attempts_before_handoff: null,
+      config_json: null
+    };
+    policyResult = {
+      scenarioCode: scenarioCode as any,
+      policy: null,
+      permissions: {
+        canReply: safePolicy.allow_agent_to_reply,
+        canExecuteMutating: safePolicy.allow_agent_to_execute,
+        canCreateHandoff: safePolicy.allow_agent_to_create_handoff,
+        requiresAdminApproval: safePolicy.requires_admin_approval,
+        confidenceThreshold: Math.max(AI_CONFIDENCE_THRESHOLD, safePolicy.confidence_threshold)
+      }
+    };
+  }
   if (policy) {
     try {
       await appendConversationEvent(db, conversationId, 'policy_applied', {
@@ -192,18 +232,6 @@ async function processWithAiAgent(
   try {
     await updateConversationLanguageAndScenario(db, conversationId, effectiveLang, scenarioCode);
   } catch (_) {}
-  const safePolicy: ScenarioPolicy = policy ?? {
-    scenario_id: 0,
-    scenario_code: scenarioCode,
-    autonomy_mode: 'ASSIST_ONLY',
-    allow_agent_to_reply: true,
-    allow_agent_to_execute: false,
-    allow_agent_to_create_handoff: true,
-    requires_admin_approval: true,
-    confidence_threshold: AI_CONFIDENCE_THRESHOLD,
-    max_attempts_before_handoff: null,
-    config_json: null
-  };
 
   let appointments: Array<{ id?: string; start?: string; service?: string; master?: string }> = [];
   let services: Array<{ id: number; name?: string }> = [];
@@ -322,6 +350,39 @@ async function processWithAiAgent(
     },
     logger
   );
+
+  // Build DecisionObject skeleton for future diagnostics / modules (no behaviour change for now).
+  let decisionSkeleton: DecisionObject | null = null;
+  try {
+    let bookingResult;
+    if (intent === 'BOOKING') {
+      bookingResult = evaluateBooking({
+        intent,
+        deterministic: undefined,
+        freeSlots: free_slots
+      });
+    }
+    const clientContext = buildClientContext({
+      phoneE164: clientPhone,
+      conversation: conv,
+      lastMessages: rows,
+      behaviorOverride: overrides ?? null,
+      detectedLanguage: effectiveLang,
+      languageHint,
+      kbContextSummary: kbText,
+      upcomingAppointments: appointments
+    });
+    decisionSkeleton = assembleDecisionSkeleton({
+      scenario: routed,
+      context: clientContext,
+      policy: policyResult,
+      fallbackLanguage: effectiveLang,
+      bookingResult
+    });
+    logger.debug?.({ conversationId, decisionSkeleton }, 'Decision skeleton built');
+  } catch (_) {
+    // Best-effort only; failures here must not affect runtime behaviour.
+  }
 
   if (!result) {
     await createHandoffAndPauseWithSummary(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, 'AI agent call failed', effectiveLang, { reason_code: 'ai_agent_failed' });
