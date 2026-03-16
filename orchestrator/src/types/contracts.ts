@@ -110,17 +110,41 @@ export interface BookingSpecialistResult {
   suggestedAlternatives?: string[]; // ISO datetimes
 }
 
+export type RescheduleDomainStatus =
+  | 'missing_current_appointment'
+  | 'missing_new_time'
+  | 'exact_slot_available'
+  | 'alternatives_only'
+  | 'day_closed'
+  | 'no_capacity'
+  | 'restricted_by_policy'
+  | 'needs_handoff'
+  | 'execution_ready'
+  | 'execution_blocked';
+
 export interface RescheduleSpecialistResult {
   status: SpecialistStatus;
+  domainStatus: RescheduleDomainStatus;
   reasonCode: DecisionReasonCode;
   rescheduledAppointmentId?: string;
 }
 
 export interface CancellationSpecialistResult {
   status: SpecialistStatus;
+  domainStatus: CancellationDomainStatus;
   reasonCode: DecisionReasonCode;
   approvalId?: string; // gateway approvals.id if applicable
 }
+
+export type CancellationDomainStatus =
+  | 'missing_current_appointment'
+  | 'approval_required'
+  | 'reschedule_first'
+  | 'safe_to_cancel'
+  | 'restricted_by_policy'
+  | 'needs_handoff'
+  | 'execution_ready'
+  | 'execution_blocked';
 
 // ---------- Policy layer ----------
 
@@ -168,6 +192,8 @@ export interface ExecutionPlan {
     tool: string;
     payload: Record<string, unknown>;
     mutating: boolean;
+    status?: 'planned' | 'executed' | 'skipped' | 'failed';
+    note?: string;
   }>;
 }
 
@@ -185,6 +211,21 @@ export interface DecisionOutcome {
   confidence: number;
 }
 
+// ---------- Diagnostics / enrichment metadata ----------
+
+export interface WriterMetadata {
+  usedFallback: boolean;
+}
+
+export interface ReplyQaIssueSummary {
+  code: string;
+}
+
+export interface ReplyQaMetadata {
+  fallbackUsed: boolean;
+  issues: ReplyQaIssueSummary[];
+}
+
 export interface DecisionObject {
   scenario: ScenarioRouterResult;
   context: ClientContext;
@@ -195,5 +236,7 @@ export interface DecisionObject {
   cancellationResult?: CancellationSpecialistResult;
   actionPlan: ActionPlan;
   outcome: DecisionOutcome;
+  writer?: WriterMetadata;
+  replyQa?: ReplyQaMetadata;
 }
 

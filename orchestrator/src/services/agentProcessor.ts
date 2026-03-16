@@ -1,6 +1,6 @@
 import type { DbPool } from '../db';
-import { getConversation, setConversationState, shouldBotRespond, updateConversationLanguageAndScenario } from './conversation';
-import { getBehaviorOverride } from './behaviorOverrides';
+import { getConversation, setConversationState, shouldBotRespond, updateConversationLanguageAndScenario, type ConversationRow } from './conversation';
+import { getBehaviorOverride, type BehaviorOverride } from './behaviorOverrides';
 import { createHandoffCase, addPendingAction } from './handoff';
 import { getLastMessages, persistMessage } from './messageStore';
 import { updateLastOutbound } from './conversation';
@@ -19,7 +19,13 @@ import { buildClientContext } from './clientContext';
 import { evaluatePolicy } from './policySpecialist';
 import { assembleDecisionSkeleton } from './decisionAssembler';
 import { evaluateBooking } from './bookingSpecialist';
-import type { DecisionObject } from '../types/contracts';
+import { evaluateReschedule } from './rescheduleSpecialist';
+import { evaluateCancellation } from './cancellationSpecialist';
+import { writeReply } from './writer';
+import { runReplyQaGuard } from './replyQaGuard';
+import { persistDecisionSnapshot } from './decisionDiagnostics';
+import type { DecisionObject, ScenarioCode } from '../types/contracts';
+import { prepareHandoff } from './handoffSpecialist';
 import { tryDeterministicSchedulingReply } from './deterministicScheduling';
 import type { QueuedMessage } from './debounce';
 
@@ -118,11 +124,44 @@ export async function processBatch(
       start,
       end,
       languageHint,
-      overrides?.language_preference ?? null
+      overrides?.language_preference ?? null,
+      conv,
+      overrides ?? null
     );
     return;
   }
 
+  await processWithoutAi(
+    db,
+    batch,
+    logger,
+    sendToSummary,
+    companyId,
+    requestId,
+    conv,
+    clientPhone,
+    batchText,
+    defaultEffectiveLang
+  );
+}
+
+/**
+ * Legacy non-AI fallback path used only when no AI API key is configured.
+ * Provides simple upcoming-appointments summary or generic reply, or falls back to handoff on MCP error.
+ */
+async function processWithoutAi(
+  db: DbPool,
+  batch: QueuedMessage[],
+  logger: any,
+  sendToSummary: (msg: string) => Promise<void>,
+  companyId: number,
+  requestId: string,
+  conv: Awaited<ReturnType<typeof getConversation>>,
+  clientPhone: string,
+  batchText: string,
+  defaultEffectiveLang: ResolvedLanguage
+) {
+  const { conversation_id: conversationId } = conv!;
   const lower = batchText.toLowerCase();
   const hasTrigger = HANDOFF_TRIGGERS.some((t) => lower.includes(t));
   if (hasTrigger) {
@@ -164,7 +203,9 @@ async function processWithAiAgent(
   start: string,
   end: string,
   languageHint: string | null,
-  languagePreference: string | null
+  languagePreference: string | null,
+  conv: ConversationRow,
+  overrides: BehaviorOverride | null
 ) {
   const first = batch[0];
   const { conversationId, clientPhone } = first;
@@ -181,7 +222,7 @@ async function processWithAiAgent(
   try {
     await appendConversationEvent(db, conversationId, 'language_detected', { language: effectiveLang, raw: lang });
   } catch (_) {}
-  const scenarioCode = intentToScenarioCode(intent);
+  const scenarioCode = intentToScenarioCode(intent) as ScenarioCode;
   try {
     await appendConversationEvent(db, conversationId, 'intent_detected', { intent });
     await appendConversationEvent(db, conversationId, 'scenario_selected', { scenario_code: scenarioCode });
@@ -351,22 +392,43 @@ async function processWithAiAgent(
     logger
   );
 
-  // Build DecisionObject skeleton for future diagnostics / modules (no behaviour change for now).
+  // Build DecisionObject skeleton for diagnostics / enrichment (no behaviour change for now).
   let decisionSkeleton: DecisionObject | null = null;
   try {
-    let bookingResult;
-    if (intent === 'BOOKING') {
-      bookingResult = evaluateBooking({
-        intent,
-        deterministic: undefined,
-        freeSlots: free_slots
-      });
-    }
+    const bookingResult =
+      intent === 'BOOKING'
+        ? evaluateBooking({
+            intent,
+            deterministic: undefined,
+            freeSlots: free_slots
+          })
+        : undefined;
+
+    const rescheduleResult =
+      intent === 'RESCHEDULE'
+        ? evaluateReschedule({
+            intent,
+            upcomingAppointments: appointments,
+            freeSlots: free_slots,
+            policyAllowsExecute: policyResult.permissions.canExecuteMutating
+          })
+        : undefined;
+
+    const cancellationResult =
+      intent === 'CANCEL_REQUEST'
+        ? evaluateCancellation({
+            intent,
+            upcomingAppointments: appointments,
+            requiresAdminApproval: policyResult.permissions.requiresAdminApproval,
+            canExecuteMutating: policyResult.permissions.canExecuteMutating
+          })
+        : undefined;
+
     const clientContext = buildClientContext({
       phoneE164: clientPhone,
       conversation: conv,
       lastMessages: rows,
-      behaviorOverride: overrides ?? null,
+      behaviorOverride: overrides,
       detectedLanguage: effectiveLang,
       languageHint,
       kbContextSummary: kbText,
@@ -377,7 +439,9 @@ async function processWithAiAgent(
       context: clientContext,
       policy: policyResult,
       fallbackLanguage: effectiveLang,
-      bookingResult
+      bookingResult,
+      rescheduleResult,
+      cancellationResult
     });
     logger.debug?.({ conversationId, decisionSkeleton }, 'Decision skeleton built');
   } catch (_) {
@@ -400,7 +464,31 @@ async function processWithAiAgent(
       reply_text_preview: result.reply_text ?? undefined,
       tags: result.tags ?? undefined
     };
+    try {
+      const handoffPrep = prepareHandoff({
+        scenarioCode,
+        reasonCode: 'low_confidence',
+        confidence: result.confidence,
+        summary,
+        replyPreview: result.reply_text ?? undefined,
+        tags: result.tags ?? undefined
+      });
+      logger.debug?.({ conversationId, handoffPrep }, 'Handoff specialist output (low_confidence)');
+      if (decisionSkeleton) {
+        decisionSkeleton.actionPlan.handoff = handoffPrep;
+        decisionSkeleton.outcome = {
+          type: 'HANDOFF',
+          reasonCode: 'handoff_requested_by_ai',
+          confidence: result.confidence
+        };
+      }
+    } catch (_) {
+      // diagnostics only
+    }
     await createHandoffAndPauseWithSummary(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, summary, effectiveLang, ctx);
+    if (decisionSkeleton) {
+      await persistDecisionSnapshot(db, conversationId, decisionSkeleton);
+    }
     return;
   }
 
@@ -419,7 +507,31 @@ async function processWithAiAgent(
       reply_text_preview: result.reply_text ?? undefined,
       tags: result.tags ?? undefined
     };
+    try {
+      const handoffPrep = prepareHandoff({
+        scenarioCode,
+        reasonCode: 'ai_handoff',
+        confidence: result.confidence,
+        summary,
+        replyPreview: result.reply_text ?? undefined,
+        tags: result.tags ?? undefined
+      });
+      logger.debug?.({ conversationId, handoffPrep }, 'Handoff specialist output (AI HANDOFF)');
+      if (decisionSkeleton) {
+        decisionSkeleton.actionPlan.handoff = handoffPrep;
+        decisionSkeleton.outcome = {
+          type: 'HANDOFF',
+          reasonCode: 'handoff_requested_by_ai',
+          confidence: result.confidence
+        };
+      }
+    } catch (_) {
+      // diagnostics only
+    }
     await createHandoffAndPauseWithSummary(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, summary, effectiveLang, ctx);
+    if (decisionSkeleton) {
+      await persistDecisionSnapshot(db, conversationId, decisionSkeleton);
+    }
     if (result.reply_text) await sendAndLog(db, clientPhone, result.reply_text, conversationId, logger);
     return;
   }
@@ -439,7 +551,31 @@ async function processWithAiAgent(
       reply_text_preview: result.reply_text ?? undefined,
       tags: result.tags ?? undefined
     };
+    try {
+      const handoffPrep = prepareHandoff({
+        scenarioCode,
+        reasonCode: 'need_approval',
+        confidence: result.confidence,
+        summary,
+        replyPreview: result.reply_text ?? undefined,
+        tags: result.tags ?? undefined
+      });
+      logger.debug?.({ conversationId, handoffPrep }, 'Handoff specialist output (NEED_APPROVAL)');
+      if (decisionSkeleton) {
+        decisionSkeleton.actionPlan.handoff = handoffPrep;
+        decisionSkeleton.outcome = {
+          type: 'NEED_APPROVAL',
+          reasonCode: 'handoff_need_approval',
+          confidence: result.confidence
+        };
+      }
+    } catch (_) {
+      // diagnostics only
+    }
     await createHandoffAndPauseWithSummary(db, conversationId, clientPhone, batch, logger, sendToSummary, requestId, summary, effectiveLang, ctx);
+    if (decisionSkeleton) {
+      await persistDecisionSnapshot(db, conversationId, decisionSkeleton);
+    }
     if (result.reply_text) await sendAndLog(db, clientPhone, result.reply_text, conversationId, logger);
     return;
   }
@@ -447,17 +583,37 @@ async function processWithAiAgent(
   if (result.decision === 'RESPOND') {
     let createAppointmentFailed = false;
     let createAppointmentSucceeded = false;
+    const executionItems: {
+      tool: string;
+      payload: Record<string, unknown>;
+      mutating: boolean;
+      status?: 'planned' | 'executed' | 'skipped' | 'failed';
+      note?: string;
+    }[] = [];
     if (Array.isArray(result.mcp_calls) && result.mcp_calls.length > 0) {
       for (const item of result.mcp_calls) {
         const tool = typeof (item as any)?.tool === 'string' ? (item as any).tool : null;
         const payload = (item as any)?.payload && typeof (item as any).payload === 'object' ? (item as any).payload : {};
         if (!tool) continue;
+        const mutating = isMutatingTool(tool);
+        const execItemBase = {
+          tool,
+          payload: payload as Record<string, unknown>,
+          mutating
+        };
         if (isMutatingTool(tool) && !safePolicy.allow_agent_to_execute) {
           logger.info({ tool, conversationId, scenarioCode: safePolicy.scenario_code }, 'MCP mutating tool skipped by policy (allow_agent_to_execute=false)');
           try {
             await appendConversationEvent(db, conversationId, 'execution_denied_by_policy', { tool, reason: 'allow_agent_to_execute=false' });
           } catch (_) {}
           if (tool === 'crm.create_appointment') createAppointmentFailed = true;
+          if (decisionSkeleton) {
+            executionItems.push({
+              ...execItemBase,
+              status: 'skipped',
+              note: 'allow_agent_to_execute=false'
+            });
+          }
           continue;
         }
         try {
@@ -470,12 +626,25 @@ async function processWithAiAgent(
           try {
             await appendConversationEvent(db, conversationId, 'tool_succeeded', { tool });
           } catch (_) {}
+          if (decisionSkeleton) {
+            executionItems.push({
+              ...execItemBase,
+              status: 'executed'
+            });
+          }
         } catch (err) {
           logger.warn({ err, tool, conversationId }, 'MCP call from AI failed');
           try {
             await appendConversationEvent(db, conversationId, 'tool_failed', { tool, error: String((err as Error)?.message ?? err) });
           } catch (_) {}
           if (tool === 'crm.create_appointment') createAppointmentFailed = true;
+          if (decisionSkeleton) {
+            executionItems.push({
+              ...execItemBase,
+              status: 'failed',
+              note: String((err as Error)?.message ?? err)
+            });
+          }
         }
       }
     }
@@ -517,9 +686,46 @@ async function processWithAiAgent(
       await sendToSummary(`[${clientPhone}] Fake confirmation blocked → handoff.`);
       return;
     }
-    const replyToSend = !safePolicy.allow_agent_to_reply
-      ? getSystemMessage('generic_ack', effectiveLang)
-      : (result.reply_text || getSystemMessage('generic_ack', effectiveLang));
+    const writerOutput = writeReply({
+      scenarioCode,
+      language: effectiveLang,
+      replyCandidate: result.reply_text ?? null,
+      allowAgentToReply: safePolicy.allow_agent_to_reply
+    });
+    const qaResult = runReplyQaGuard({
+      scenarioCode,
+      language: effectiveLang,
+      text: writerOutput.text,
+      writerUsedFallback: writerOutput.usedFallback,
+      allowAgentToReply: safePolicy.allow_agent_to_reply,
+      bookingToolSucceeded: createAppointmentSucceeded,
+      replyLooksConfirmed
+    });
+    const replyToSend = qaResult.finalText;
+    if (decisionSkeleton) {
+      decisionSkeleton.actionPlan.reply = {
+        text: replyToSend,
+        language: effectiveLang
+      };
+      if (executionItems.length > 0) {
+        decisionSkeleton.actionPlan.execution = {
+          mcpCalls: executionItems
+        };
+      }
+      decisionSkeleton.writer = {
+        usedFallback: writerOutput.usedFallback
+      };
+      decisionSkeleton.replyQa = {
+        fallbackUsed: qaResult.fallbackUsed,
+        issues: qaResult.issues.map((i) => ({ code: i.code }))
+      };
+      decisionSkeleton.outcome = {
+        type: 'RESPOND',
+        reasonCode: 'ok',
+        confidence: result.confidence
+      };
+      logger.debug?.({ conversationId, decisionSkeleton }, 'Decision object enriched with reply/writer/qa');
+    }
     if (!safePolicy.allow_agent_to_reply) {
       try {
         await appendConversationEvent(db, conversationId, 'reply_blocked', { reason: 'allow_agent_to_reply=false' });
@@ -529,7 +735,14 @@ async function processWithAiAgent(
       await appendConversationEvent(db, conversationId, 'reply_sent', { length: replyToSend.length });
     } catch (_) {}
     await sendAndLog(db, clientPhone, replyToSend, conversationId, logger);
-    await sendToSummary(`[${clientPhone}] AI RESPOND (confidence ${result.confidence}).`);
+    if (decisionSkeleton) {
+      await persistDecisionSnapshot(db, conversationId, decisionSkeleton);
+    }
+    await sendToSummary(
+      `[${clientPhone}] AI RESPOND (confidence ${result.confidence}) writer_used_fallback=${writerOutput.usedFallback} qa_fallback_used=${qaResult.fallbackUsed} qa_issues=${qaResult.issues
+        .map((i) => i.code)
+        .join(',') || 'none'}.`
+    );
   }
 }
 

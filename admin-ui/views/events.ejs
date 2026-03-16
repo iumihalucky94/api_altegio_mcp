@@ -5,6 +5,107 @@
   <a href="/on-hold" class="btn btn-ghost btn-sm">On hold</a>
   <a href="/reviews/add?conversationId=<%= encodeURIComponent(conversationId) %>" class="btn btn-primary btn-sm">Добавить оценку</a>
 </p>
+
+<% const decisionEvents = (events || []).filter(e => e.event_type === 'decision_object_enriched'); %>
+<% if (decisionEvents.length > 0) {
+     const last = decisionEvents[decisionEvents.length - 1];
+     const d = typeof last.event_payload_json === 'object'
+       ? last.event_payload_json
+       : (last.event_payload_json ? JSON.parse(last.event_payload_json) : null);
+%>
+<div class="card">
+  <h2 class="section-title">Последний decision snapshot</h2>
+  <% if (d) { %>
+  <div class="grid-2">
+    <div>
+      <h3 class="section-subtitle">Scenario</h3>
+      <p><strong>Intent:</strong> <code><%= d.scenario && d.scenario.intent %></code></p>
+      <p><strong>Scenario:</strong> <code><%= d.scenario && d.scenario.code %></code></p>
+      <p><strong>Confidence:</strong> <%= d.scenario && typeof d.scenario.confidence === 'number' ? d.scenario.confidence.toFixed(3) : '—' %></p>
+
+      <h3 class="section-subtitle">Policy</h3>
+      <p><strong>canReply:</strong> <%= d.policy && d.policy.permissions ? String(d.policy.permissions.canReply) : '—' %></p>
+      <p><strong>canExecuteMutating:</strong> <%= d.policy && d.policy.permissions ? String(d.policy.permissions.canExecuteMutating) : '—' %></p>
+      <p><strong>canCreateHandoff:</strong> <%= d.policy && d.policy.permissions ? String(d.policy.permissions.canCreateHandoff) : '—' %></p>
+      <p><strong>requiresAdminApproval:</strong> <%= d.policy && d.policy.permissions ? String(d.policy.permissions.requiresAdminApproval) : '—' %></p>
+      <p><strong>confidenceThreshold:</strong> <%= d.policy && d.policy.permissions && d.policy.permissions.confidenceThreshold != null ? d.policy.permissions.confidenceThreshold.toFixed(3) : '—' %></p>
+
+      <h3 class="section-subtitle">Outcome</h3>
+      <p><strong>Type:</strong> <code><%= d.outcome && d.outcome.type %></code></p>
+      <p><strong>Reason:</strong> <code><%= d.outcome && d.outcome.reasonCode %></code></p>
+      <p><strong>Confidence:</strong> <%= d.outcome && typeof d.outcome.confidence === 'number' ? d.outcome.confidence.toFixed(3) : '—' %></p>
+    </div>
+    <div>
+      <h3 class="section-subtitle">Specialists</h3>
+      <p><strong>Booking:</strong>
+        <% if (d.specialists && d.specialists.booking) { %>
+          <code><%= d.specialists.booking.status %> / <%= d.specialists.booking.domainStatus %> / <%= d.specialists.booking.reasonCode %></code>
+        <% } else { %>—<% } %>
+      </p>
+      <p><strong>Reschedule:</strong>
+        <% if (d.specialists && d.specialists.reschedule) { %>
+          <code><%= d.specialists.reschedule.status %> / <%= d.specialists.reschedule.domainStatus %> / <%= d.specialists.reschedule.reasonCode %></code>
+        <% } else { %>—<% } %>
+      </p>
+      <p><strong>Cancellation:</strong>
+        <% if (d.specialists && d.specialists.cancellation) { %>
+          <code><%= d.specialists.cancellation.status %> / <%= d.specialists.cancellation.domainStatus %> / <%= d.specialists.cancellation.reasonCode %></code>
+        <% } else { %>—<% } %>
+      </p>
+
+      <h3 class="section-subtitle">Reply / Handoff</h3>
+      <p><strong>Reply language:</strong> <code><%= d.reply && d.reply.language %></code></p>
+      <p><strong>Reply text:</strong> <%= d.reply && d.reply.text ? d.reply.text : '—' %></p>
+      <p><strong>Handoff:</strong>
+        <% if (d.handoff) { %>
+          <code><%= d.handoff.reasonCode %> / <%= d.handoff.priority %></code><br/>
+          <small><%= d.handoff.summary %></small>
+        <% } else { %>—<% } %>
+      </p>
+
+      <h3 class="section-subtitle">Writer / QA</h3>
+      <p><strong>Writer usedFallback:</strong> <%= d.writer ? String(d.writer.usedFallback) : '—' %></p>
+      <p><strong>QA fallbackUsed:</strong> <%= d.replyQa ? String(d.replyQa.fallbackUsed) : '—' %></p>
+      <p><strong>QA issues:</strong>
+        <% if (d.replyQa && Array.isArray(d.replyQa.issues) && d.replyQa.issues.length > 0) { %>
+          <code><%= d.replyQa.issues.map(i => i.code).join(', ') %></code>
+        <% } else { %>none<% } %>
+      </p>
+
+      <h3 class="section-subtitle">Execution</h3>
+      <% const exec = d.execution && Array.isArray(d.execution.mcpCalls) ? d.execution.mcpCalls : []; %>
+      <% if (exec.length > 0) { %>
+        <ul class="list">
+          <% exec.forEach(call => { %>
+            <li>
+              <code><%= call.tool %></code>
+              — mutating: <%= String(call.mutating) %>,
+              status: <code><%= call.status || 'n/a' %></code>
+              <% if (call.note) { %>
+                <br><small><%= call.note %></small>
+              <% } %>
+            </li>
+          <% }); %>
+        </ul>
+      <% } else { %>
+        <p>Execution data: —</p>
+      <% } %>
+    </div>
+  </div>
+  <details class="mt-3">
+    <summary>Raw decision_object_enriched payload</summary>
+    <pre><%= JSON.stringify(d, null, 2) %></pre>
+  </details>
+  <% } else { %>
+  <p>Не удалось разобрать payload decision_object_enriched.</p>
+  <% } %>
+</div>
+<% } else { %>
+<div class="card">
+  <p>Decision snapshot для этой беседы пока не зафиксирован.</p>
+</div>
+<% } %>
+
 <div class="card">
   <table class="table">
     <thead>

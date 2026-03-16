@@ -5,7 +5,9 @@ import type {
   DecisionObject,
   ActionPlan,
   DecisionOutcome,
-  BookingSpecialistResult
+  BookingSpecialistResult,
+  RescheduleSpecialistResult,
+  CancellationSpecialistResult
 } from '../types/contracts';
 import type { ResolvedLanguage } from './localization';
 
@@ -15,11 +17,13 @@ export interface DecisionAssemblerInput {
   policy: PolicyResult;
   fallbackLanguage: ResolvedLanguage;
   bookingResult?: BookingSpecialistResult;
+  rescheduleResult?: RescheduleSpecialistResult;
+  cancellationResult?: CancellationSpecialistResult;
 }
 
 // Skeleton assembler: creates a minimal DecisionObject without changing behaviour.
 export function assembleDecisionSkeleton(input: DecisionAssemblerInput): DecisionObject {
-  const { scenario, context, policy, fallbackLanguage, bookingResult } = input;
+  const { scenario, context, policy, fallbackLanguage, bookingResult, rescheduleResult, cancellationResult } = input;
 
   const actionPlan: ActionPlan = {
     reply: {
@@ -44,8 +48,8 @@ export function assembleDecisionSkeleton(input: DecisionAssemblerInput): Decisio
     policy,
     schedule: undefined,
     bookingResult,
-    rescheduleResult: undefined,
-    cancellationResult: undefined,
+    rescheduleResult,
+    cancellationResult,
     actionPlan,
     outcome
   };
